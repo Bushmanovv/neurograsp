@@ -1,0 +1,323 @@
+%% ============================================================
+%%  CHAPTER 13 — DISCUSSION
+%% ============================================================
+\chapter{Discussion}
+\label{ch:discussion}
+
+The preceding chapters presented this project's methodology and
+results in the order they were built: data collection, signal
+processing, feature engineering, classification architecture,
+results, the control application, and real-time deployment. This
+chapter steps back from that build order to interpret what those
+results mean, to check the finished system against the research
+gaps and contributions claimed at the outset (Chapters~1--2), and
+to state plainly where the system falls short. Section~\ref{sec:disc_interpretation}
+interprets the headline result in context. Section~\ref{sec:disc_gaps}
+revisits the research gaps identified in Chapter~2 against what was
+actually built. Section~\ref{sec:disc_metalesson} draws out the
+project's central, generalisable engineering lesson.
+Section~\ref{sec:disc_evaluation} discusses rigorous evaluation as a
+contribution in its own right. Section~\ref{sec:disc_limitations}
+presents the project's limitations honestly and in full.
+Section~\ref{sec:disc_summary} summarises the chapter.
+
+%% ----------------------------------------------------------
+\section{Interpreting the Final Result}
+\label{sec:disc_interpretation}
+%% ----------------------------------------------------------
+
+The final system reaches 91.3\% accuracy (unweighted \acrshort{loso}
+mean) or 91.8\% (pooled), macro-F1 0.913--0.918, on a 5-class
+voluntary-artifact command set, evaluated under the strictest
+protocol available for a single-subject, cross-day \acrshort{bci}
+(Chapters~9--10). Table~\ref{tab:mi_comparison} in Chapter~2 places
+this alongside representative motor-imagery \acrshort{bci} systems
+from the literature, which report 70--85\% accuracy on 2--4-class
+problems using comparable or more sophisticated classifiers
+(\acrshort{csp}+\acrshort{lda}, deep CNNs, EEGNet). This project's
+result is higher, on more classes, using a comparatively simple
+per-branch classifier (nearest-neighbour \acrshort{dtw}, linear
+\acrshort{svc} in tangent space) --- but the comparison should be
+read carefully rather than as a claim of a generally superior
+method.
+
+The reason artifact-based \acrshort{bci} can outperform motor
+imagery here is architectural to the \emph{problem}, not just the
+\emph{solution}: voluntary blinks and jaw contractions are
+high-amplitude, largely voluntary, and physiologically distinct
+from one another (\acrshort{eog} vs.\ \acrshort{emg}, Chapter~3),
+whereas motor imagery relies on subtle, often unreliable
+sensorimotor rhythm modulation that many users struggle to produce
+consistently even after extensive training (Chapter~2). This
+project's accuracy advantage is therefore best read as evidence
+that \textbf{trading generality (imagined movement of any limb) for
+specificity (five deliberately chosen, physiologically distinct
+gestures)} is a favourable trade for a prosthetic-control use case,
+not as evidence that the classification methods developed here
+would transfer that same advantage to a motor-imagery problem.
+Whether that trade is acceptable depends entirely on the deployment
+context: a user with reliable voluntary control over eye and jaw
+muscles is a good match for this system; a user without such
+control is not, and would need a motor-imagery or hybrid approach
+instead.
+
+%% ----------------------------------------------------------
+\section{Revisiting the Research Gaps}
+\label{sec:disc_gaps}
+%% ----------------------------------------------------------
+
+Chapter~2 identified six research gaps (G1--G6) in the
+artifact-based \acrshort{bci} literature and mapped this project's
+seven claimed contributions (C1--C7, Chapter~1) onto them.
+Table~\ref{tab:gaps_delivered} restates that mapping alongside the
+specific chapter and result that backs each claim, so that every
+contribution claimed in Chapter~1 can be checked against concrete
+evidence rather than taken on faith.
+
+\begin{table}[htbp]
+\centering
+\caption{Research gaps (Chapter~2) and contributions (Chapter~1),
+cross-referenced against the concrete evidence produced for each.}
+\label{tab:gaps_delivered}
+\renewcommand{\arraystretch}{1.35}
+\begin{tabular}{c p{3.6cm} p{3.0cm} p{3.0cm}}
+\toprule
+\textbf{Gap} & \textbf{Claim} & \textbf{Evidence} &
+\textbf{Chapter} \\
+\midrule
+G1 & Physiology-matched hybrid architecture (C1) & +4.1\% Riemann,
+    +2.1\% \acrshort{dtw}, over flat/hierarchical baseline & 9, 10 \\
+G2 & Rest-window contamination addressed (C4) & Activity gate,
+    +3.1\% accuracy & 7, 10 \\
+G3 & Data leakage in evaluation addressed (C5) & 4-test audit,
+    shuffle test at 21\%, \acrshort{loso} adopted & 9 \\
+G4 & Novel L/R bruxism asymmetry feature (C2) & T3--T4 index,
+    bruxism\_left F1 +0.128 at introduction & 8 \\
+G5 & End-to-end system with \acrshort{fsm} + activity gate (C6) &
+    Full pipeline, 14\,ms latency, 3-consecutive confirmation &
+    11, 12 \\
+G6 & Consumer-hardware validation (C7, partial) & 19-channel
+    device; Emotiv target hardware not yet validated (see
+    Section~\ref{sec:disc_limitations}) & 4, 6 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Five of the six gaps (G1--G5) are addressed with direct, quantified
+evidence produced over the course of this project. G6 is only
+\textbf{partially} addressed, and this project does not claim
+otherwise: the 19-channel medical-grade device used for data
+collection (Chapter~6) is a mid-range research device, not the
+lower-channel-count consumer hardware (the Emotiv EPOC~X) that was
+always the intended deployment target. This gap between
+data-collection hardware and deployment hardware is discussed fully
+as a limitation in Section~\ref{sec:disc_limitations}, since it is
+the single largest piece of unfinished validation work remaining in
+the project.
+
+%% ----------------------------------------------------------
+\section{The Central Lesson: Architecture Over Features}
+\label{sec:disc_metalesson}
+%% ----------------------------------------------------------
+
+If this project has one methodological lesson worth generalising
+beyond its specific gesture set and hardware, it is the one first
+surfaced in Chapter~8 and confirmed twice more in Chapter~9:
+\textbf{when a multi-class problem contains classes with
+fundamentally different underlying signal physiology, no amount of
+additional feature engineering on a single flat classifier can
+resolve the resulting tension, because a flat classifier has no
+mechanism to apply a feature conditionally.}
+
+This pattern appeared three separate times in this project, each
+time independently:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Feature engineering (Chapter~8):} every advanced
+    feature family tested (\acrshort{dwt}, \acrshort{tkeo},
+    \acrshort{emg} descriptors) helped one class family and hurt
+    the other, never both --- because muscle-oriented features are
+    meaningless for \acrshort{eog} events and vice versa.
+    \item \textbf{Muscle classification (Chapter~9):} amplitude-based
+    features (\acrshort{tkeo}) failed to survive cross-session
+    drift; only when the \emph{representation itself} was changed
+    to something inherently insensitive to amplitude (Riemannian
+    covariance geometry) did the muscle branch improve.
+    \item \textbf{Blink classification (Chapter~9):} four
+    independently-designed counting-based methods all failed on
+    contaminated data for the same underlying reason; only when the
+    \emph{representation itself} was changed from counting discrete
+    events to comparing waveform shape (\acrshort{dtw}) did the
+    blink branch improve.
+\end{itemize}
+
+In each case, the fix that worked was not ``try harder'' within the
+existing representation --- more features, more hyperparameter
+tuning, a bigger classifier --- but a change of representation
+matched to the physiology of the specific signal being classified.
+This is the throughline connecting Chapters~8 and~9, and it is
+offered here as a lesson that should generalise to other multi-class
+\acrshort{bci} and biosignal problems with heterogeneous class
+physiology, not just to this project's specific five gestures.
+
+%% ----------------------------------------------------------
+\section{Rigorous Evaluation as a Contribution in Itself}
+\label{sec:disc_evaluation}
+%% ----------------------------------------------------------
+
+The evaluation-methodology crisis documented in Chapter~9 --- an
+apparently strong $\sim$80--85\% result that turned out to be
+substantially inflated by epoch-overlap leakage --- is presented in
+this report not as an embarrassing false start to be minimised, but
+as one of the project's more transferable contributions (C5,
+Chapter~1). Two aspects of the audit are worth drawing out
+explicitly here:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{The shuffle test is cheap and diagnostic.}
+    Permuting class labels while leaving every other part of the
+    pipeline untouched, and confirming the result collapses to
+    chance (21\% for five classes, Chapter~9), is a small addition
+    to any evaluation pipeline that provides strong evidence the
+    pipeline is not manufacturing signal through some
+    implementation artefact. This is a generally applicable sanity
+    check, independent of the specific classes or features involved,
+    and is recommended here as a default step in any \acrshort{bci}
+    evaluation pipeline rather than a project-specific one-off.
+    \item \textbf{The right level of strictness depends on the
+    deployment question, not on what is easiest to report.} This
+    project deliberately reports \acrshort{loso} --- the strictest
+    protocol available given three sessions --- as its headline
+    number, rather than a less strict but higher-scoring protocol
+    (Chapter~9, Table~\ref{tab:honest_protocols}). The gap
+    between GroupKFold's development-time 88.0\% and \acrshort{loso}'s
+    91.3\% is a reminder that even a leak-free protocol can
+    understate or overstate deployment performance if it does not
+    match the actual deployment question (``how well does this work
+    on a new day for the same user?'').
+\end{enumerate}
+
+Chapter~2 identified underreporting of evaluation leakage as a gap
+in the wider artifact-based \acrshort{bci} literature (G3). This
+project's contribution to that gap is not merely ``we did not leak''
+but the fully worked audit methodology itself --- the four
+diagnostic tests, the shuffle test, and the explicit protocol
+comparison table --- which is offered as a template other
+\acrshort{bci} projects using overlapping sliding-window epochs
+could adopt directly.
+
+%% ----------------------------------------------------------
+\section{Limitations}
+\label{sec:disc_limitations}
+%% ----------------------------------------------------------
+
+This report has aimed throughout to document failures and
+unresolved issues alongside successes (Chapters~6--12); this section
+consolidates the limitations that remain unresolved at the time of
+writing, rather than scattering them across earlier chapters.
+
+\subsection{Single-Subject Design}
+
+Every result in this report describes a model calibrated to, and
+evaluated on, one individual (Chapter~6). This is standard practice
+for \acrshort{bci} systems intended to be personalised per user
+(Chapter~2), and \acrshort{loso}'s cross-\emph{session} evaluation
+is the correct generalisation target for that design --- but it
+means no claim in this report should be read as evidence of
+cross-\emph{subject} accuracy. A new user would need to collect
+their own multi-session calibration dataset and retrain before this
+system's accuracy figures would apply to them.
+
+\subsection{Residual Single-Blink Contamination}
+
+\acrshort{dtw} shape-matching (Chapter~9) resolved the
+\emph{architectural} ceiling that four counting-based methods could
+not get past, but it did not retroactively clean the underlying
+recordings: roughly 45\% of \code{single\_blink} recordings still
+physically contain multi-blink clusters (Chapter~6), and the
+confusion matrix (Chapter~10) shows this residual contamination is
+still the dominant source of error in the final model (82 of 102
+total misclassifications). The architecture-level ceiling has been
+resolved; the underlying data-quality problem has not, and the
+single highest-leverage remaining improvement to this system's
+accuracy would likely be a clean re-recording of the
+\code{single\_blink} class with deliberate, verified pauses between
+individual blinks (Chapter~14), rather than any further
+classifier-side change.
+
+\subsection{Data-Collection vs.\ Deployment Hardware Mismatch}
+
+The complete dataset (Chapter~6) was recorded on a 19-channel
+research-grade device sampling at \SI{200}{\hertz}. The intended
+deployment target is the Emotiv EPOC~X, a 14-channel consumer
+headset with a different electrode layout and an on-device 45\,Hz
+hardware filter. Channel correspondence between the two devices is
+only partial: T3/T4 (used throughout this report for jaw
+\acrshort{emg}) map approximately to the Emotiv's T7/T8, and Fp1/Fp2
+(used for blink \acrshort{eog}) map approximately to AF3/AF4, but
+neither mapping is exact, and no data has yet been collected on the
+target device to validate that the trained model transfers. This is
+the single largest piece of unfinished validation in the project:
+every accuracy figure in this report describes performance on the
+data-collection hardware, not the deployment hardware, and the two
+should not be assumed equivalent without direct verification
+(Chapter~14).
+
+\subsection{Incomplete Firmware and Application Integration}
+
+As documented in full and without qualification in Chapter~11, only
+the firmware scaffold (Layer~0) is verified running on the physical
+ESP32 at the time of writing. Servo control, the WiFi access point,
+and the live mapping/pose editors --- the layers that would let a
+user actually configure and observe the system through the web app
+described in Chapter~11 --- are designed but not yet built. The web
+application itself is a complete, working prototype, but has only
+been exercised in its mock-data mode, not against the real firmware
+or a live classifier stream. The real-time inference pipeline
+(Chapter~12) and the firmware (Chapter~11) have not yet been run
+together end-to-end on physical hardware; each has been validated
+independently (inference against the offline-trained model and
+recorded data; firmware Layer~0 on the physical board) but not yet
+as a connected whole.
+
+\subsection{Real-Time Activity Gate Fragility}
+
+The real-time activity gate (Chapter~12) uses a fixed
+20\,\si{\micro\volt} threshold, calibrated against the amplitude
+distributions observed in the recorded dataset. Unlike the
+recording-relative offline gate (Chapter~7), this fixed threshold
+cannot adapt to a new session's specific electrode impedance or
+amplifier gain, and its continued validity in a live deployment
+session has not been verified outside the conditions under which it
+was calibrated.
+
+%% ----------------------------------------------------------
+\section{Chapter Summary}
+\label{sec:disc_summary}
+%% ----------------------------------------------------------
+
+This chapter interpreted the project's 91.3--91.8\% \acrshort{loso}
+result in the context of the motor-imagery \acrshort{bci}
+literature (Chapter~2), attributing its accuracy advantage to the
+deliberate choice of high-amplitude, physiologically distinct
+voluntary gestures rather than to a generally superior
+classification method. Five of the six research gaps identified in
+Chapter~2 were shown to be addressed with direct, quantified
+evidence; the sixth (consumer-hardware validation) was shown to be
+only partially addressed, pending validation on the intended Emotiv
+EPOC~X deployment hardware. The project's central, generalisable
+engineering lesson --- that heterogeneous-physiology multi-class
+problems are better solved by routing to a physiology-matched
+representation than by adding features to a flat classifier --- was
+drawn out explicitly across its three independent appearances in
+Chapters~8 and~9. The evaluation-methodology audit (Chapter~9) was
+presented as a contribution in its own right, with the shuffle test
+recommended as a generally applicable diagnostic beyond this
+project. Finally, five specific, unresolved limitations were stated
+plainly: the single-subject design, residual single-blink
+contamination not fixable by further classifier changes, the
+data-collection/deployment hardware mismatch, incomplete firmware
+and application integration, and the real-time activity gate's
+fixed-threshold fragility. The following, final chapter concludes
+the report and lays out the concrete future work implied by each of
+these limitations.

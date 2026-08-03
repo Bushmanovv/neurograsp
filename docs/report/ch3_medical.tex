@@ -1,0 +1,342 @@
+%% ============================================================
+%%  CHAPTER 3 — MEDICAL AND PHYSIOLOGICAL FOUNDATIONS
+%% ============================================================
+\chapter{Medical and Physiological Foundations}
+\label{ch:medical}
+
+This chapter establishes the medical and physiological basis for the
+artifact-based control paradigm adopted in this project. Whereas the
+preceding chapters introduced the problem and surveyed prior work,
+this chapter explains \emph{why} the chosen voluntary artifacts ---
+eye blinks, jaw clinching, and lateral bruxism --- produce reliable,
+distinguishable electrical signals at the scalp, and why this paradigm
+is particularly well suited to the target population of upper-limb
+amputees with peripheral nerve damage.
+
+Section~\ref{sec:med_signals} distinguishes the neural and muscular
+signals captured by scalp electrodes.
+Section~\ref{sec:med_blink} describes the neurophysiology of the eye
+blink and its electrical signature.
+Section~\ref{sec:med_jaw} describes the neuromuscular basis of jaw
+clinching and bruxism.
+Section~\ref{sec:med_lateral} explains the anatomical basis of the
+left/right bruxism asymmetry.
+Section~\ref{sec:med_intact} argues why these pathways remain intact
+in the target patient population.
+Section~\ref{sec:med_safety} discusses the clinical safety and
+comfort considerations of repeated voluntary artifact production.
+Section~\ref{sec:med_rationale} synthesises the clinical rationale
+for choosing an artifact-based interface over motor imagery for this
+population. Section~\ref{sec:med_summary} summarises the chapter.
+
+\medskip
+\noindent\textit{Note: The physiological and clinical content of this
+chapter was developed in consultation with a collaborating
+specialist in neurology, who reviewed the anatomical and
+neurophysiological claims for accuracy.}
+
+%% ----------------------------------------------------------
+\section{Neural versus Muscular Signals at the Scalp}
+\label{sec:med_signals}
+%% ----------------------------------------------------------
+
+Electroencephalography records the summed electrical activity of the
+brain through electrodes placed on the scalp. However, the scalp
+potentials measured by an \acrshort{eeg} device are not exclusively
+of cortical origin. They are a superposition of several distinct
+biological sources, each with characteristic amplitude, frequency
+content, and spatial distribution:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Cortical activity (true EEG):} The synchronised
+    post-synaptic potentials of large populations of cortical
+    neurons, measured in microvolts (typically 1--\SI{100}{\micro\volt}).
+    This is the signal of interest in conventional motor-imagery
+    \acrshort{bci}.
+
+    \item \textbf{Ocular potentials (\acrshort{eog}):} Electrical changes
+    produced by movement of the eyeball and eyelid, dominated by the
+    corneoretinal potential. These appear most strongly at frontal
+    electrodes and can reach tens to hundreds of microvolts.
+
+    \item \textbf{Muscle activity (EMG):} The electrical activity of
+    contracting skeletal muscle, particularly the facial, jaw, and
+    neck muscles near the electrode sites. Surface \acrshort{emg}
+    is broadband (extending well above \SI{30}{\hertz}) and can be
+    an order of magnitude larger than cortical \acrshort{eeg}.
+\end{itemize}
+
+In conventional \acrshort{eeg} analysis, ocular and muscular signals
+are regarded as \emph{artifacts} --- unwanted contamination to be
+removed before the cortical signal can be studied~\cite{croft2000removal,
+fatourechi2007emg}. The central insight of the present project is to
+\emph{invert} this relationship: because these artifact signals are
+large, reproducible, and under direct voluntary control, they are
+deliberately produced by the user as command signals. From a control
+standpoint, what matters is not whether a signal is cortical or
+muscular in origin, but whether the user can generate it reliably and
+the system can detect it robustly. The voluntary artifacts used here
+satisfy both criteria far more readily than motor-imagery rhythms.
+
+%% ----------------------------------------------------------
+\section{Neurophysiology of the Eye Blink}
+\label{sec:med_blink}
+%% ----------------------------------------------------------
+
+\subsection{Anatomy and Innervation}
+
+The eye blink is produced principally by the \textit{orbicularis
+oculi}, a sphincter-like muscle encircling the eye that closes the
+eyelid when it contracts. The orbicularis oculi is innervated by the
+temporal and zygomatic branches of the \textbf{facial nerve} (cranial
+nerve VII). A voluntary blink is initiated by motor cortex via the
+corticobulbar tract, which projects to the facial motor nucleus in
+the pons; reflexive blinking additionally involves brainstem circuits.
+Because the command originates supranuclearly and the effector is a
+cranial muscle, the blink pathway is entirely independent of the
+spinal cord and the peripheral nerves of the upper limb.
+
+\subsection{The Corneoretinal Potential}
+
+The dominant electrical contribution of a blink is not muscular but
+ocular. The eyeball behaves as a fixed electrical dipole: the cornea
+is electropositive relative to the retina, a standing voltage known
+as the \textbf{corneoretinal potential}. As the eyelid sweeps down
+over the cornea during a blink, it alters the conductive path between
+this dipole and the frontal scalp electrodes, producing a large,
+characteristic deflection at Fp1 and Fp2. A secondary contribution
+comes from a brief burst of orbicularis oculi \acrshort{emg} during
+lid closure. The combined event produces a deflection of approximately
+50--\SI{300}{\micro\volt} at the frontal poles --- one to two orders
+of magnitude larger than motor-imagery modulations --- lasting
+roughly 150--\SI{400}{\milli\second}~\cite{croft2000removal,
+usakli2010mouse}.
+
+\subsection{Why Blink Counting Works --- and Its Limits}
+
+Because each individual blink produces one discrete, time-localised
+deflection at Fp1/Fp2, a sequence of blinks produces a corresponding
+sequence of peaks. A single blink yields one peak; a double blink, two
+peaks in rapid succession. This makes the \emph{number of voluntary
+blinks} a naturally discrete control variable --- the physiological
+basis for using single and double blinks as two separate commands.
+
+In practice, however, the boundary between one blink and two is not
+always clean: a subject intending a single blink may inadvertently
+produce a rapid pair, and the inter-blink interval of a deliberate
+double blink varies from instance to instance. Simple peak-counting is
+therefore fragile. The more robust signal is the overall
+\emph{morphology} of the blink waveform --- its shape over the full
+epoch --- rather than a discrete peak count. This physiological
+observation directly motivates the shape-based Dynamic Time Warping
+approach to blink classification developed in Chapter~9, which compares
+whole-waveform shape rather than counting events.
+
+%% ----------------------------------------------------------
+\section{Neuromuscular Basis of Jaw Clinching and Bruxism}
+\label{sec:med_jaw}
+%% ----------------------------------------------------------
+
+\subsection{Muscles of Mastication}
+
+Jaw movements are driven by the muscles of mastication, principally
+the \textbf{masseter} and the \textbf{temporalis}. The masseter is a
+thick muscle spanning the cheek from the zygomatic arch to the angle
+of the mandible; the temporalis is a broad, fan-shaped muscle covering
+the temporal region of the skull, lying directly beneath the T3 (left)
+and T4 (right) electrode positions of the 10--20 system. Both muscles
+are innervated by the mandibular division (V3) of the \textbf{trigeminal
+nerve} (cranial nerve V) --- again, a cranial pathway entirely
+independent of the spinal cord and upper-limb nerves.
+
+\subsection{Jaw Clinching as a Bilateral EMG Source}
+
+A jaw clinch --- a sustained, forceful bite --- produces a strong,
+sustained contraction of the masseter and temporalis muscles on
+\emph{both} sides of the head simultaneously. The resulting surface
+\acrshort{emg} appears as a broadband, high-amplitude signal at the
+temporal electrodes T3 and T4. Because the clinch is bilaterally
+symmetric, the amplitudes at T3 and T4 are approximately equal. This
+sustained, high-energy, bilateral signature makes the clinch the most
+reliably detected of all five gestures, which is why it is mapped to
+the safety-critical ``close hand'' command (Chapter~4, hardware).
+
+\subsection{Bruxism as a Lateralisable Gesture}
+
+Bruxism refers to grinding or lateral movement of the jaw. Unlike the
+symmetric clinch, a deliberate lateral grind shifts the mandible to
+one side and preferentially recruits the temporalis on that side. This
+lateral asymmetry is the physiological key that allows left and right
+bruxism to be distinguished, as described in the next section.
+
+%% ----------------------------------------------------------
+\section{Anatomical Basis of Left/Right Lateral Asymmetry}
+\label{sec:med_lateral}
+%% ----------------------------------------------------------
+
+The ability to discriminate left from right bruxism rests on a
+straightforward anatomical fact: the temporalis muscles on the two
+sides of the head lie beneath different electrodes (T3 on the left,
+T4 on the right), and a lateral grinding motion does not recruit them
+equally.
+
+When the subject grinds the jaw to the \textbf{left}, the left
+temporalis is preferentially activated, producing a larger
+\acrshort{emg} amplitude at T3 than at T4. When the subject grinds to
+the \textbf{right}, the right temporalis dominates, producing a larger
+amplitude at T4 than at T3. A symmetric clinch, by contrast, activates
+both roughly equally.
+
+This three-way pattern --- left-dominant, right-dominant, and balanced
+--- maps cleanly onto a single scalar quantity: the normalised
+amplitude difference between T4 and T3. This is precisely the T3--T4
+asymmetry index introduced as a feature in Chapter~8, and it is the
+direct algorithmic expression of the underlying muscular anatomy. The
+physiological reality (which temporalis is working harder) is captured
+by a single number, which in turn separates the two bruxism commands.
+
+%% ----------------------------------------------------------
+\section{Preservation of Pathways in the Target Population}
+\label{sec:med_intact}
+%% ----------------------------------------------------------
+
+The clinical motivation for this project is to serve upper-limb
+amputees, particularly those with extensive peripheral nerve damage
+for whom conventional myoelectric prostheses are ineffective. The
+viability of the artifact-based approach for this population rests on
+a crucial anatomical observation: \textbf{the cranial pathways that
+generate the chosen artifacts are entirely separate from the
+upper-limb pathways that are damaged in these patients.}
+
+Specifically:
+
+\begin{itemize}[leftmargin=*]
+    \item The eye blink is driven by the \textbf{facial nerve}
+    (cranial nerve VII).
+    \item Jaw clinching and bruxism are driven by the
+    \textbf{trigeminal nerve} (cranial nerve V).
+    \item Both are cranial nerves that exit the brainstem directly
+    and never traverse the brachial plexus, the cervical/thoracic
+    spinal segments serving the arm, or the peripheral nerves of the
+    upper limb.
+\end{itemize}
+
+Consequently, an amputation at any level of the arm --- and any
+associated damage to the brachial plexus or upper-limb peripheral
+nerves --- leaves the blink and jaw pathways completely unaffected.
+A patient who has lost all reliable myoelectric control of a residual
+limb retains full, effortless voluntary control of blinking and jaw
+movement. This dissociation is the core clinical argument for the
+approach: it provides a high-bandwidth, reliable control channel that
+is anatomically guaranteed to survive the very injuries that disable
+conventional prosthetic interfaces.
+
+This argument naturally has boundaries. Patients with concomitant
+cranial nerve injury, certain facial palsies, severe bruxism-related
+temporomandibular disorders, or neuromuscular conditions affecting the
+face and jaw may not be suitable candidates. The approach is therefore
+positioned as an option for the specific --- and clinically common ---
+population of upper-limb amputees with intact craniofacial function,
+rather than as a universal solution.
+
+%% ----------------------------------------------------------
+\section{Clinical Safety and Comfort Considerations}
+\label{sec:med_safety}
+%% ----------------------------------------------------------
+
+Because the system requires the user to produce voluntary facial and
+jaw gestures repeatedly during operation, the clinical safety and
+ergonomic comfort of these gestures warrant explicit consideration.
+
+\textbf{Eye blinks} are physiologically trivial: humans blink
+spontaneously thousands of times per day, and voluntary blinking adds
+negligible additional load. No safety concern arises from blink-based
+commands.
+
+\textbf{Jaw clinching and bruxism}, however, involve repeated forceful
+contraction of the muscles of mastication. While occasional voluntary
+clinching is harmless, sustained or excessive grinding is associated
+in the clinical literature with temporomandibular joint (TMJ) strain,
+masticatory muscle fatigue, and, in pathological (involuntary) bruxism,
+dental wear. For a control interface, these considerations imply
+several design safeguards:
+
+\begin{itemize}[leftmargin=*]
+    \item Commands should be brief and require only moderate force ---
+    the activity gate (Chapter~7) is calibrated to detect deliberate
+    gestures without demanding maximal contraction.
+    \item The command vocabulary should minimise the frequency of
+    jaw gestures relative to the lower-effort blink gestures where
+    possible.
+    \item Extended continuous use should incorporate rest periods to
+    avoid masticatory muscle fatigue.
+\end{itemize}
+
+These are engineering-level mitigations of an inherently low clinical
+risk for occasional, moderate use; they would require formal
+evaluation before any sustained clinical deployment, which is outside
+the scope of this proof-of-concept project.
+
+%% ----------------------------------------------------------
+\section{Clinical Rationale for Artifact-Based Control}
+\label{sec:med_rationale}
+%% ----------------------------------------------------------
+
+Bringing the physiological arguments together, the case for an
+artifact-based interface over motor imagery for this specific
+population can be summarised along three dimensions:
+
+\textbf{Signal reliability.} Motor-imagery rhythms are small
+(1--\SI{5}{\micro\volt}), highly variable between individuals, and
+absent altogether in a substantial fraction of users (the so-called
+``BCI illiteracy'' phenomenon). Voluntary artifacts are large
+(tens to hundreds of microvolts), reproducible within an individual,
+and producible by essentially anyone with intact craniofacial
+function. For a clinical assistive device that must work reliably for
+its user every day, this difference is decisive.
+
+\textbf{Calibration burden.} Motor-imagery systems typically require
+lengthy, repeated calibration sessions and frequent recalibration as
+the cortical signal drifts. Voluntary artifacts, being large and
+stereotyped, require far less calibration data and are more stable
+across sessions --- an important practical advantage for a device
+intended for daily independent use.
+
+\textbf{Anatomical robustness.} As established in
+Section~\ref{sec:med_intact}, the cranial pathways generating these
+artifacts are anatomically guaranteed to survive upper-limb
+amputation and peripheral nerve injury. The interface therefore offers
+a control channel whose availability is decoupled from the patient's
+injury, which is precisely the property that myoelectric control
+lacks for this population.
+
+Taken together, these considerations make voluntary artifact-based
+control not merely a convenient engineering choice but a clinically
+motivated one for upper-limb amputees with compromised residual
+musculature.
+
+%% ----------------------------------------------------------
+\section{Chapter Summary}
+\label{sec:med_summary}
+%% ----------------------------------------------------------
+
+This chapter established the medical and physiological foundations of
+the artifact-based control paradigm. Scalp electrodes capture a
+mixture of cortical, ocular, and muscular signals; this project
+deliberately exploits the ocular and muscular signals --- normally
+discarded as artifacts --- as voluntary control commands. The eye
+blink, driven by the facial nerve, produces a large corneoretinal
+deflection at the frontal electrodes whose morphology encodes single
+and double blink commands. Jaw clinching and bruxism, driven
+by the trigeminal nerve, produce broadband \acrshort{emg} at the
+temporal electrodes; the bilateral symmetry of the clinch and the
+lateral asymmetry of bruxism allow the close, rotate-left, and
+rotate-right commands to be distinguished, with the left/right
+distinction grounded in the differential activation of the left and
+right temporalis muscles. Critically, both the facial and trigeminal
+pathways are cranial and therefore anatomically independent of the
+upper-limb nerves damaged in the target population, making these
+control signals robustly available even when myoelectric control is
+not. With this physiological grounding established, the following
+chapter describes the hardware that captures and acts upon these
+signals.

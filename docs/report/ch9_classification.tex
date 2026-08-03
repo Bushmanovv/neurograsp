@@ -1,0 +1,1045 @@
+%% ============================================================
+%%  CHAPTER 9 — CLASSIFICATION AND TRAINING
+%% ============================================================
+\chapter{Classification and Training}
+\label{ch:classification}
+
+This chapter presents the classification and training methodology
+used to learn the mapping from the engineered feature superset
+(Chapter~8) --- and, for two of the five gesture classes, from the
+raw preprocessed waveform directly --- to the five final gesture
+classes established in Chapter~6. This is the chapter in which the
+project's central engineering narrative plays out: an initial flat
+classifier is shown to be evaluated dishonestly by a naive
+cross-validation protocol; a rigorous leakage audit is performed to
+establish what the model can actually be trusted to do; and the
+final architecture is built not by adding more features to one
+classifier, but by routing each gesture family to the
+classification method that is physiologically matched to it.
+Section~\ref{sec:cl_overview} provides an overview of the training
+pipeline and its evolution across four production scripts.
+Section~\ref{sec:cl_imbalance} describes class imbalance handling
+via \acrshort{smote}. Section~\ref{sec:cl_leakage} presents the
+evaluation methodology crisis and the four-test leakage audit that
+resolved it --- a central methodological contribution of this
+project. Section~\ref{sec:cl_loso} defines the
+Leave-One-Session-Out (\acrshort{loso}) protocol used for all
+honest reporting from this point forward.
+Section~\ref{sec:cl_baseline} presents the flat Random Forest
+baseline. Section~\ref{sec:cl_hierarchical} presents the
+hierarchical, physiology-routed architecture and its reconciliation
+under \acrshort{loso}. Section~\ref{sec:cl_riemann} derives the
+Riemannian-geometry muscle sub-classifier. Section~\ref{sec:cl_dtw}
+tells the five-attempt story of the blink sub-classification
+ceiling and its resolution via \acrshort{dtw} shape-matching.
+Section~\ref{sec:cl_architecture} assembles the final three-way
+hybrid architecture. Section~\ref{sec:cl_progression} presents the
+cumulative performance progression. Section~\ref{sec:cl_summary}
+summarises the chapter.
+
+%% ----------------------------------------------------------
+\section{Training Pipeline Overview}
+\label{sec:cl_overview}
+%% ----------------------------------------------------------
+
+The training codebase evolved through four production scripts,
+each corresponding to a stage of the architectural narrative told
+in this chapter:
+
+\begin{itemize}[leftmargin=*]
+    \item \code{train.py} --- trains the flat Random Forest
+    baseline on the full feature superset (Section~\ref{sec:cl_baseline}).
+    \item \code{train\_hierarchical.py} --- trains the two-stage
+    hierarchical router (Section~\ref{sec:cl_hierarchical}).
+    \item \code{train\_hybrid.py} --- replaces the muscle
+    sub-classifier's hand-crafted features with Riemannian
+    covariance geometry (Section~\ref{sec:cl_riemann}).
+    \item \code{train\_dtw\_hybrid.py} --- replaces the blink
+    sub-classifier with \acrshort{dtw} shape-matching, producing the
+    final production model (Section~\ref{sec:cl_dtw}).
+\end{itemize}
+
+All four scripts share the same upstream data pipeline: the
+activity-gated epochs and 129-feature superset from Chapters~6--8
+are loaded once, and each script fits \code{StandardScaler},
+class-balancing, and the relevant classifier(s) strictly on
+whichever training fold is active for the evaluation protocol in
+use (Section~\ref{sec:cl_loso}). \acrshort{smote} is applied to the
+training fold only, after any split, exactly as in the original
+flat pipeline (Section~\ref{sec:cl_imbalance}).
+
+Two evaluation protocols recur throughout this chapter and should
+not be confused: \textbf{GroupKFold} (recording-level, no epoch
+overlap leakage) is used during development and ablation studies,
+where the goal is fast iteration; \textbf{Leave-One-Session-Out}
+(\acrshort{loso}) is used for every number reported as a final,
+honest result. The reasoning behind this choice, and the audit
+that led to it, is the subject of
+Sections~\ref{sec:cl_leakage}--\ref{sec:cl_loso}. A separate,
+free-running mixed-gesture validation recording was also attempted
+(\code{Random/}, Chapter~6) but could not be used for evaluation
+due to an unsynchronised-clock data-acquisition problem; it is not
+referenced further in this chapter.
+
+%% ----------------------------------------------------------
+\section{Class Imbalance Handling with SMOTE}
+\label{sec:cl_imbalance}
+%% ----------------------------------------------------------
+
+\subsection{The Imbalance Problem}
+
+As shown in Chapter~6, the activity-gated dataset is imbalanced:
+\code{bruxism\_right} (325 epochs) is roughly $2\times$ more
+frequent than \code{clinch} (165 epochs). Training a classifier
+directly on this imbalanced data biases the model toward the
+majority class, since minimising overall error is achieved by
+favouring the class with the most examples.
+
+\subsection{SMOTE}
+
+The Synthetic Minority Over-sampling Technique
+(\acrshort{smote})~\cite{chawla2002smote} addresses this imbalance
+by generating synthetic minority-class samples rather than simply
+duplicating existing ones. For each minority-class sample
+$\mathbf{x}_i$, \acrshort{smote} selects one of its $k$ nearest
+minority-class neighbours $\mathbf{x}_{nn}$ and generates a new
+synthetic sample along the line segment connecting them:
+
+\begin{equation}
+\mathbf{x}_{\text{new}} = \mathbf{x}_i + \lambda
+\left(\mathbf{x}_{nn} - \mathbf{x}_i\right),
+\quad \lambda \sim \mathcal{U}(0, 1)
+\label{eq:smote}
+\end{equation}
+
+\noindent where $\lambda$ is drawn uniformly at random from the
+interval $[0, 1]$ and $k = 5$ neighbours are used by default. This
+interpolation generates plausible new examples within the convex
+hull of the existing minority-class samples, enriching the minority
+class without the overfitting that naive duplication would cause.
+
+\subsection{Application Protocol}
+
+\acrshort{smote} is applied to the \textbf{training fold only},
+after whichever split defines the current evaluation protocol
+(GroupKFold or \acrshort{loso}). Applying \acrshort{smote} before
+the split, or to the pooled dataset, would allow synthetic samples
+derived from held-out examples to influence the training set ---
+precisely the kind of preprocessing leak that
+Section~\ref{sec:cl_leakage} audits for. By fitting \acrshort{smote}
+strictly on the training fold, the held-out session remains a
+genuine, untouched measure of generalisation performance. This
+protocol is verified explicitly as part of the leakage audit
+(Section~\ref{sec:cl_leakage}).
+
+%% ----------------------------------------------------------
+\section{The Evaluation Methodology Crisis}
+\label{sec:cl_leakage}
+%% ----------------------------------------------------------
+
+This section documents what is, methodologically, the single most
+important lesson of the project: an accuracy number is only as
+trustworthy as the evaluation protocol that produced it, and the
+naive protocol used in early development produced a number that
+was not trustworthy at all.
+
+\subsection{The Inflated Number}
+
+Initial results using a random \code{StratifiedKFold} split gave an
+apparent accuracy of approximately 80--85\%. As described in
+Chapter~7, epochs are extracted with 75\% overlap between adjacent
+windows (2.0\,s epochs, 0.5\,s step): two temporally adjacent
+epochs share 300 of their 400 samples and are therefore
+near-duplicates. If overlapping epochs are split randomly between
+training and test folds, the classifier is effectively evaluated on
+data it has already almost seen, and the reported accuracy is
+substantially inflated by this \textbf{epoch-overlap leakage}
+rather than reflecting genuine generalisation.
+
+\subsection{The Leakage Audit}
+\label{sec:cl_leakage_audit}
+
+Rather than simply asserting that the naive protocol leaks, a
+formal audit was run consisting of four independent diagnostic
+tests, summarised in Table~\ref{tab:leakage_audit}.
+
+\begin{table}[htbp]
+\centering
+\caption{The four-test leakage audit. Each test isolates a
+different potential source of evaluation-time leakage.}
+\label{tab:leakage_audit}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{p{3.4cm} p{3.6cm} p{5.0cm}}
+\toprule
+\textbf{Test} & \textbf{Purpose} & \textbf{Result} \\
+\midrule
+Strict cross-session (Session1+Session2 $\rightarrow$ Session3)
+    & Tests true generalisation to an unseen recording day
+    & 74.4\% ungated / 81\% gated --- does \emph{not} collapse
+      $\rightarrow$ the underlying signal is real \\
+Scaler / SelectKBest fit-on-train check
+    & Tests for a preprocessing leak (statistics computed on
+      data that includes the test fold)
+    & \textbf{Clean} --- verified numerically; scaler and
+      feature-selection statistics are always fit on the
+      training fold only \\
+Same-recording epochs present in both folds
+    & Tests for the epoch-overlap leak described above
+    & Headline (random) protocol: \textbf{yes, leaks}.
+      Grouped protocols (GroupKFold, \acrshort{loso}):
+      \textbf{no leak} \\
+Shuffle test (class labels randomly permuted)
+    & Tests for an implementation leak (any path by which the
+      true label could reach the model other than through the
+      features)
+    & \textbf{21\% accuracy} ($\approx$ chance for 5 classes)
+      $\rightarrow$ the pipeline does not manufacture signal \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The shuffle test deserves particular emphasis as a piece of
+methodology worth generalising beyond this project: by permuting
+the class labels while leaving every other part of the pipeline
+untouched (same features, same scaler, same classifier, same
+cross-validation splitting), any accuracy substantially above chance
+would indicate that information about the true label is leaking
+into the model through some channel other than genuine feature
+content --- for example, through an index or ordering artefact.
+Chance level for a balanced 5-class problem is 20\%; the observed
+21\% confirms the pipeline is clean.
+
+\textbf{Conclusion of the audit:} there is no implementation leak
+and no preprocessing leak, but the headline (random-split) protocol
+does leak via epoch overlap. This single finding is what
+invalidates the $\sim$80--85\% figure obtained under naive
+\code{StratifiedKFold} and motivates the grouped evaluation
+protocols used for every result reported from this point in the
+report onward.
+
+\subsection{The Honest Protocols Going Forward}
+
+Table~\ref{tab:honest_protocols} summarises the evaluation
+protocols retained after the audit, and the role each plays.
+
+\begin{table}[htbp]
+\centering
+\caption{Evaluation protocols used after the leakage audit. Random
+StratifiedKFold is retained in this report only as a documented
+negative example --- it must never be cited as a performance
+number.}
+\label{tab:honest_protocols}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{p{4.2cm} c c p{4.0cm}}
+\toprule
+\textbf{Protocol} & \textbf{Use} & \textbf{Leak-free?} &
+\textbf{Property} \\
+\midrule
+Random StratifiedKFold & --- (documented only) & \ding{55} &
+Inflated by epoch-overlap leakage; \textbf{do not cite} \\
+GroupKFold (recording-level) & Development / ablation tuning &
+\ding{51} & No overlap leakage, but not cross-day \\
+\textbf{Leave-One-Session-Out} & \textbf{Final reporting} &
+\ding{51} & Strictest: cross-day, deployment-realistic \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+GroupKFold is used throughout development and ablation work in this
+chapter because it is fast to iterate on and already eliminates the
+epoch-overlap leak, at the cost of not testing across recording
+days. \acrshort{loso} (Section~\ref{sec:cl_loso}) is strictly harder
+--- and strictly more honest for this project's single-subject,
+cross-day deployment scenario --- and is used for every number
+that this report cites as a final result.
+
+%% ----------------------------------------------------------
+\section{Leave-One-Session-Out Evaluation Protocol}
+\label{sec:cl_loso}
+%% ----------------------------------------------------------
+
+\subsection{Definition}
+
+Leave-One-Session-Out (\acrshort{loso}) cross-validation treats
+each of the three recording sessions (Chapter~6) as one fold. For
+each session $s \in \{\text{Session1}, \text{Session2},
+\text{Session3}\}$, the model is trained on the union of the
+\emph{other two} sessions and evaluated on session $s$, which the
+model has never seen in any form (not even through a shared scaler
+or feature-selection statistic):
+
+\begin{equation}
+\text{Acc}_{\text{LOSO}} = \frac{1}{3}\sum_{s=1}^{3}
+\text{Acc}\!\left(\mathcal{M}_{\setminus s},\, \mathcal{D}_s\right)
+\label{eq:loso}
+\end{equation}
+
+\noindent where $\mathcal{M}_{\setminus s}$ is the model trained on
+all sessions except $s$, and $\mathcal{D}_s$ is the held-out data
+from session $s$. Because a session is an entire recording day ---
+with its own electrode placement, impedance, and physiological
+state --- \acrshort{loso} directly measures the quantity that
+matters for deployment: how well a model calibrated on previous
+days performs on a new day, without further recalibration.
+
+\subsection{Why LOSO Is the Correct Protocol for This Project}
+
+Since this is a \textbf{single-subject} design (Chapter~6), the
+relevant notion of ``generalisation'' is not generalisation to a
+new person, but generalisation to a new \emph{day} for the same
+person --- which is exactly what \acrshort{loso} tests. This
+distinguishes \acrshort{loso} from GroupKFold: GroupKFold holds out
+individual \emph{recordings} (which may still come from the same
+session as some training data), whereas \acrshort{loso} holds out
+an entire \emph{session}, so nothing from that recording day ---
+including its specific impedance and amplifier-gain conditions ---
+is available to the model at evaluation time. This is the strictest
+protocol available given three sessions, and the one most
+representative of real deployment, where the user puts the headset
+on for a new session and expects the previously trained model to
+work with no additional calibration.
+
+\subsection{Reference Numbers}
+
+Table~\ref{tab:honest_numbers} consolidates the numbers referenced
+throughout this chapter, so that any figure quoted later can be
+traced back to the protocol that produced it.
+
+\begin{table}[htbp]
+\centering
+\caption{Reference table for every accuracy figure used in this
+report. Only the \acrshort{loso} row should ever be cited as
+\emph{the} accuracy of the system.}
+\label{tab:honest_numbers}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{p{4.5cm} p{4.7cm} c}
+\toprule
+\textbf{Protocol} & \textbf{What it measures} & \textbf{Number} \\
+\midrule
+Random StratifiedKFold & Inflated by overlap leakage &
+$\sim$85\% --- \textbf{do not cite} \\
+Shuffle test & Pipeline integrity check & 21\% ($\approx$chance)
+--- clean \\
+GroupKFold (recording-level) & Development metric (final hybrid) &
+88.0\% \\
+\textbf{LOSO (final, honest)} & \textbf{Cross-session deployment
+accuracy} & \textbf{91.3\%} --- cite this \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ----------------------------------------------------------
+\section{Baseline: Flat Random Forest Classifier}
+\label{sec:cl_baseline}
+%% ----------------------------------------------------------
+
+Before any architectural changes, a conventional flat classifier
+was trained on the full feature superset (Chapter~8) as a
+reference point. \code{StandardScaler}, \code{SelectKBest} (mutual
+information), and \acrshort{smote} were applied in sequence, ahead
+of the classifier itself; Random Forest, \acrshort{svm} with an RBF
+kernel, and \acrshort{lda} were all evaluated as candidate final
+classifiers under this flat design, with Random Forest carried
+forward as the production choice for the reasons summarised below.
+
+\subsection{Why Random Forest}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Mixed feature handling:} Decision trees split on
+    one feature at a time, so features of very different scales and
+    distributions (bounded asymmetry indices, heavy-tailed
+    kurtosis, strictly positive band powers) can be combined
+    without normalisation issues.
+    \item \textbf{Robustness to irrelevant features:} Random
+    feature subsampling at each split means an irrelevant feature
+    is simply not selected, which matters once the feature superset
+    grows to 129 columns (Chapter~8) and different stages of the
+    final architecture only need a subset of them.
+    \item \textbf{Fast, deterministic inference:} prediction
+    requires only traversing a fixed number of shallow trees,
+    giving low, deterministic latency suitable for real-time
+    operation (Chapter~12).
+\end{itemize}
+
+\subsection{Hyperparameters}
+
+Table~\ref{tab:rf_hyperparams} lists the Random Forest
+hyperparameters used for the Stage~1 router and, where applicable,
+elsewhere in the pipeline.
+
+\begin{table}[htbp]
+\centering
+\caption{Random Forest hyperparameters, used consistently as the
+Stage~1 blink/muscle router throughout the hierarchical and hybrid
+architectures.}
+\label{tab:rf_hyperparams}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{ll}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+Number of trees (\code{n\_estimators}) & 300 \\
+Max features per split & $\sqrt{93} \approx 10$ \\
+Class weight & balanced \\
+Bootstrap & True \\
+Random seed & 42 (reproducibility) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Baseline Result}
+
+Under \acrshort{loso}, the flat Random Forest baseline achieves
+\textbf{85.1\% accuracy}, macro-F1 \textbf{0.837}. This is the
+starting point against which every subsequent architectural change
+in this chapter is measured (Section~\ref{sec:cl_progression}).
+
+%% ----------------------------------------------------------
+\section{The Hierarchical Architecture}
+\label{sec:cl_hierarchical}
+%% ----------------------------------------------------------
+
+\subsection{Motivation: Features Cannot Be Applied Conditionally}
+
+Chapter~8 documented a systematic set of extended feature
+engineering experiments (\acrshort{dwt}, \acrshort{tkeo}, \acrshort{emg}
+descriptors), all of which showed the same pattern: helpful for
+either the blink classes or the muscle classes, never both, and
+often actively harmful for the other half of the taxonomy. A single
+flat classifier, trained on the concatenation of all features
+across all classes, has no mechanism to apply a feature family
+\emph{conditionally} --- it must treat every feature as globally
+available or globally absent. This observation, not a search for
+more features, is what motivated a hierarchical, physiology-routed
+architecture.
+
+\subsection{Design}
+
+The hierarchical architecture routes each window through two
+stages, illustrated in Figure~\ref{fig:hierarchical_arch}:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Stage 1 (blink vs.\ muscle):} a binary router
+    trained on frontal/\acrshort{eog}-relevant features (Fp1, Fp2,
+    Fz, F3, F4) that separates \{\code{single\_blink},
+    \code{double\_blink}\} from \{\code{clinch},
+    \code{bruxism\_left}, \code{bruxism\_right}\}.
+    \item \textbf{Stage 2a (S vs.\ O):} conditioned on Stage~1
+    routing to ``blink'', a sub-classifier trained \emph{only} on
+    blink epochs, using blink peak features (Chapter~8).
+    \item \textbf{Stage 2b (C vs.\ L vs.\ R):} conditioned on
+    Stage~1 routing to ``muscle'', a sub-classifier trained
+    \emph{only} on muscle epochs, using \acrshort{emg} descriptors
+    and asymmetry features (Chapter~8).
+\end{itemize}
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.6cm and 1.2cm,
+    box/.style={rectangle, rounded corners=3pt, draw=black,
+                fill=blue!10, minimum width=4.2cm,
+                minimum height=0.8cm, align=center, font=\small},
+    arrow/.style={-{Stealth[length=5pt]}, thick}
+]
+\node[box, fill=green!15] (in) {129-Feature Superset (Chapter~8)};
+\node[box, below=of in] (s1)
+    {Stage 1: blink vs.\ muscle\\(frontal/EOG features)};
+\node[box, fill=blue!10, below left=0.9cm and 0.4cm of s1] (s2a)
+    {Stage 2a: S vs.\ O\\(blink peak features)};
+\node[box, fill=orange!15, below right=0.9cm and 0.4cm of s1] (s2b)
+    {Stage 2b: C vs.\ L vs.\ R\\(EMG descriptors + asymmetry)};
+\node[box, fill=purple!10, below=2.4cm of s1, minimum width=6cm]
+    (out) {Predicted class: O / S / C / L / R};
+
+\draw[arrow] (in) -- (s1);
+\draw[arrow] (s1.south) -| node[near start, above,
+    font=\scriptsize]{blink} (s2a.north);
+\draw[arrow] (s1.south) -| node[near start, above,
+    font=\scriptsize]{muscle} (s2b.north);
+\draw[arrow] (s2a.south) |- (out.west);
+\draw[arrow] (s2b.south) |- (out.east);
+\end{tikzpicture}
+\caption{The hierarchical two-stage architecture. Each stage trains
+on its own epoch subset and its own feature columns, so muscle
+features can never reach the blink decision and vice versa.}
+\label{fig:hierarchical_arch}
+\end{figure}
+
+Each stage trains only on its own epoch subset, so muscle features
+can never reach the blink decision and vice versa. The full
+129-feature superset is extracted once; each stage selects its
+columns by name rather than the feature extraction being repeated
+per stage.
+
+\subsection{GroupKFold Development Results}
+
+Table~\ref{tab:hierarchical_results} shows the per-stage and
+end-to-end accuracy under GroupKFold, used for development and
+ablation at this stage of the project.
+
+\begin{table}[htbp]
+\centering
+\caption{Hierarchical architecture results under GroupKFold
+(development protocol).}
+\label{tab:hierarchical_results}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l c}
+\toprule
+\textbf{Stage} & \textbf{Accuracy} \\
+\midrule
+Stage 1 (blink/muscle routing) & 98.7\% \\
+Stage 2a (S vs.\ O)            & 76.4\% \\
+Stage 2b (C vs.\ L vs.\ R)     & 87.8\% \\
+\midrule
+\textbf{End-to-end} & \textbf{82.2\%} (vs.\ 77.2\% flat) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The biggest gains were in the blink classes (S~$+0.092$,
+O~$+0.120$ F1), because Stage~1's near-perfect routing (98.7\%)
+almost eliminates blink$\leftrightarrow$muscle confusion, and
+Stage~2a sub-classifies blinks free of muscle-feature dilution.
+Notably, the blink peak features (Chapter~8) --- which had failed
+to help in the flat multi-class context due to label contamination
+--- \emph{finally worked} in this pure 2-class S-vs-O setting,
+because the contamination's confounding effect on decision
+boundaries is far less severe when the only competing class is the
+other blink type rather than five heterogeneous classes at once.
+
+\subsection{LOSO Reconciliation}
+
+On the strictest \acrshort{loso} protocol, the hierarchical model
+initially \emph{regressed} by $-1.9$ points relative to the flat
+baseline, despite its GroupKFold gains. An ablation traced this to
+two session-fragile design choices:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{\acrshort{tkeo} is the poison:} including the
+    \acrshort{tkeo} feature (Chapter~8) in Stage~2b dragged
+    \code{bruxism\_right} F1 down to 0.789 --- consistent with the
+    Chapter~8 finding that \acrshort{tkeo}'s squared-amplitude
+    measure does not survive cross-session drift. It was dropped.
+    \item \textbf{\acrshort{emg} descriptors help cross-session:}
+    despite hurting the flat model overall (Chapter~8), the
+    \acrshort{emg} descriptor features improved clinch F1 from
+    0.74 to 0.84 under \acrshort{loso} --- their complexity
+    measures generalise well once isolated to the muscle-only
+    Stage~2b. They were kept.
+    \item \textbf{Stage 1 needed temporal channels:} adding T3/T4
+    features to the Stage~1 router (in addition to the frontal
+    features) took routing isolation from 98\% to 100\% under
+    \acrshort{loso}, closing the last source of
+    blink$\leftrightarrow$muscle cross-contamination.
+\end{itemize}
+
+After this fix, the hierarchical model matches the flat baseline at
+\textbf{85.1\% \acrshort{loso}} accuracy, but with a better
+macro-F1 (\textbf{0.839} vs.\ 0.837) and materially cleaner live
+routing behaviour --- setting the stage for the two branch-specific
+improvements described next.
+
+%% ----------------------------------------------------------
+\section{Riemannian Geometry for Muscle Classification}
+\label{sec:cl_riemann}
+%% ----------------------------------------------------------
+
+\subsection{Motivation}
+
+The \acrshort{tkeo} failure (Section~\ref{sec:cl_hierarchical};
+Chapter~8) revealed that features built from \emph{absolute
+amplitude} do not survive day-to-day amplitude drift between
+recording sessions. Riemannian geometry offers an alternative: it
+operates on the \textbf{inter-channel covariance structure} of an
+epoch rather than on absolute amplitude, making it inherently more
+robust to amplitude scaling --- and therefore a natural candidate
+for the muscle branch (Stage~2b), where amplitude drift had already
+been identified as the dominant cross-session failure mode.
+
+\subsection{Mathematical Formulation}
+
+For an epoch $\mathbf{E}_k \in \mathbb{R}^{C \times W}$ (in volts;
+see the unit-correctness note below), the sample spatial covariance
+matrix is:
+
+\begin{equation}
+\mathbf{C}_k = \frac{1}{W - 1} \mathbf{E}_k \mathbf{E}_k^{\top}
+\in \mathbb{R}^{C \times C}
+\label{eq:covariance}
+\end{equation}
+
+\noindent Sample covariance matrices estimated from short epochs
+are noisy, so the Oracle Approximating Shrinkage
+(\acrshort{oas})~\cite{barachant2012riemann} estimator is used
+instead, which regularises the sample covariance toward a scaled
+identity matrix:
+
+\begin{equation}
+\hat{\mathbf{C}}_k^{\text{OAS}} =
+(1-\rho)\,\mathbf{C}_k + \rho\,\frac{\text{tr}(\mathbf{C}_k)}{C}\,
+\mathbf{I}_C
+\label{eq:oas}
+\end{equation}
+
+\noindent where $\rho \in [0,1]$ is a shrinkage coefficient chosen
+automatically to minimise expected estimation error. Covariance
+matrices are symmetric positive-definite (\acrshort{spd}) and do
+not live on a flat Euclidean space; comparing them directly with
+Euclidean distance is known to be sub-optimal. Instead, the
+affine-invariant Riemannian distance between two \acrshort{spd}
+matrices is:
+
+\begin{equation}
+\delta_R(\mathbf{C}_1, \mathbf{C}_2) =
+\left\lVert \log\!\left(\mathbf{C}_1^{-1/2}\,\mathbf{C}_2\,
+\mathbf{C}_1^{-1/2}\right)\right\rVert_F
+\label{eq:riemann_dist}
+\end{equation}
+
+To use standard Euclidean classifiers (such as \acrshort{svc}),
+each covariance matrix is projected onto the \textbf{tangent
+space} at a reference point $\bar{\mathbf{C}}$ (typically the
+geometric mean of the training covariances):
+
+\begin{equation}
+\mathbf{s}_k = \text{upper}\!\left(
+\bar{\mathbf{C}}^{1/2}\,
+\log\!\left(\bar{\mathbf{C}}^{-1/2}\,\mathbf{C}_k\,
+\bar{\mathbf{C}}^{-1/2}\right)\,
+\bar{\mathbf{C}}^{1/2}\right)
+\label{eq:tangent_space}
+\end{equation}
+
+\noindent where $\text{upper}(\cdot)$ vectorises the upper
+triangular part of the resulting symmetric matrix. The tangent
+vectors $\mathbf{s}_k \in \mathbb{R}^{C(C+1)/2}$ live in a flat
+Euclidean space and can be classified directly with any standard
+classifier.
+
+\subsection{Method and Implementation}
+
+The muscle branch (Stage~2b) pipeline is:
+
+\begin{lstlisting}[language=Python,
+    caption={Riemannian muscle sub-classifier pipeline
+    (\code{riemann.py}).},
+    label={lst:riemann}]
+from pyriemann.estimation import Covariances
+from pyriemann.tangentspace import TangentSpace
+from sklearn.svm import SVC
+from sklearn.pipeline import make_pipeline
+
+muscle_pipeline = make_pipeline(
+    Covariances(estimator='oas'),
+    TangentSpace(metric='riemann'),
+    SVC(kernel='linear', C=1.0)
+)
+\end{lstlisting}
+
+Unlike the hand-crafted feature branches, this pipeline operates on
+\textbf{raw epochs} directly (covariance is computed across
+channels from the unfiltered-by-feature-extraction signal), not on
+engineered feature columns. It is applied only to epochs already
+routed to ``muscle'' by Stage~1.
+
+\subsection{Results}
+
+Table~\ref{tab:riemann_results} compares the hierarchical
+(hand-crafted feature) muscle branch against the Riemannian muscle
+branch, both under \acrshort{loso}.
+
+\begin{table}[htbp]
+\centering
+\caption{Riemannian muscle branch vs.\ hand-crafted-feature muscle
+branch, LOSO protocol. Per-class columns are F1 scores.}
+\label{tab:riemann_results}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l c c c c}
+\toprule
+\textbf{Model} & \textbf{Overall} & \textbf{C} & \textbf{L} &
+\textbf{R} \\
+\midrule
+Hierarchical (hand-crafted features) & 85.1\% & 0.83 & 0.90 & 0.94 \\
+\textbf{Riemannian hybrid} & \textbf{89.2\%} & \textbf{0.952} &
+\textbf{0.984} & \textbf{0.983} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The entire $+4.1$-point gain (85.1\%~$\rightarrow$~89.2\%) comes
+from the muscle classes, confirming the central hypothesis: spatial
+covariance structure survives cross-session amplitude drift far
+better than any amplitude-based feature tried in Chapter~8.
+
+\subsection{Key Negative Findings}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Pure Riemannian is not viable end-to-end:}
+    applying the Riemannian pipeline to \emph{all five} classes
+    (not just the muscle branch) is near-perfect on muscle classes
+    but destroys the blink classes, because covariance structure is
+    blind to the temporal single-vs-double blink pattern that
+    distinguishes them --- covariance summarises spatial
+    relationships, not event timing. The hybrid (branch-specific)
+    architecture is therefore essential, not optional.
+    \item \textbf{\code{tsupdate=True} is a trap:} enabling online
+    tangent-space recentring gives the best score under
+    \acrshort{loso} but \emph{collapses} under GroupKFold (clinch
+    F1 drops to 0.653), indicating it overfits to session-specific
+    structure rather than genuinely improving the representation.
+    Plain \code{TangentSpace} without online updating is robust on
+    both protocols and is what is used in production.
+    \item \textbf{Unit correctness:} the tangent space is fit in
+    volts, but the raw \acrshort{edf} signal and upstream pipeline
+    (Chapter~7) work in microvolts throughout. Inference must
+    explicitly convert $\mu\text{V} \rightarrow \text{V}$ before
+    computing covariance; a silent unit mismatch here would not
+    raise an error but would silently wreck muscle-class
+    predictions, since the covariance scale would be off by a
+    factor of $10^{12}$.
+\end{itemize}
+
+%% ----------------------------------------------------------
+\section{The Blink Ceiling: Five Attempts}
+\label{sec:cl_dtw}
+%% ----------------------------------------------------------
+
+While the muscle branch improved substantially, the blink classes
+(S/O) remained stuck at an F1 ceiling of roughly 0.74/0.78
+throughout the hierarchical and Riemannian-hybrid stages. Five
+independent methods were attempted for single-vs-double blink
+discrimination; four failed, and the diagnostic \emph{reason} they
+failed turned out to be the more important finding.
+Table~\ref{tab:blink_attempts} summarises all five.
+
+\begin{table}[htbp]
+\centering
+\caption{The five attempts at blink sub-classification. Only the
+fifth, a fundamentally different approach, succeeded.}
+\label{tab:blink_attempts}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{c p{3.2cm} c p{5.0cm}}
+\toprule
+\textbf{\#} & \textbf{Method} & \textbf{Result} &
+\textbf{Why it failed} \\
+\midrule
+1 & Raw peak-count & Failed & Counts compressed together;
+    single $\approx$ double \\
+2 & $\mu$V peak-count & Failed & Z-scoring (Chapter~7) breaks the
+    absolute amplitude threshold the method relies on \\
+3 & Sliding-window count (moving std.) & Failed (70.2\% vs.\
+    77.8\%) & 2\,s windows are not event-locked to individual
+    blinks \\
+4 & Event-locked epoching & Failed at validation gate & Diagnostic
+    revealed single-blink recordings are contaminated
+    (below) \\
+5 & \textbf{DTW shape-matching} & \textbf{Success ($+2.1\%$)} &
+    Shape survives contamination that counting cannot \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The Diagnostic Discovery (Attempts 1--4)}
+
+Attempt 4's validation gate --- which checks how many blinks an
+automated detector actually finds inside each nominally-labelled
+recording --- produced the finding already introduced in Chapter~6:
+
+\begin{table}[htbp]
+\centering
+\caption{Blinks detected per nominal gesture trial, by class. This
+diagnostic, run while building Attempt 4, is what revealed the
+single-blink contamination problem (Chapter~6).}
+\label{tab:blink_diagnostic}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l c c p{4.5cm}}
+\toprule
+\textbf{Class} & \textbf{Expected} & \textbf{Detected (mean)} &
+\textbf{Quality} \\
+\midrule
+\code{single\_blink} & 1 & 2.60 & Only 39\% clean; 45\% are
+    $\geq$1\,s clusters of $\geq$3 blinks \\
+\code{double\_blink} & 2 & 2.07 & 55\% correct \ding{51} \\
+\midrule
+\multicolumn{4}{l}{\footnotesize (\code{triple\_blink}, detected
+    at 3.08, was clean but is not part of the final taxonomy ---
+    Chapter~6)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The detector correctly counts blinks in the \code{double\_blink}
+recordings; the problem is that a substantial fraction of the
+\code{single\_blink} recordings are \emph{physically} contaminated
+with multi-blink bursts (Chapter~6). \textbf{When one class's
+recordings contain genuine instances of another class, no counting
+method --- however carefully engineered --- can separate them.}
+This conclusion is not a hypothesis; it is proven empirically across
+four independently-designed counting approaches, all of which fail
+for the same underlying reason.
+
+\subsection{The Breakthrough: DTW Shape-Matching (Attempt 5)}
+
+The insight behind Attempt 5 is to stop counting discrete events and
+instead compare \textbf{waveform shape} directly. Dynamic Time
+Warping (\acrshort{dtw})~\cite{sakoe1978dtw, berndt1994dtw} computes
+an elastic, non-linear alignment between two time series that
+minimises cumulative pointwise distance:
+
+\begin{equation}
+D(i,j) = d(x_i, y_j) +
+\min\!\big(D(i{-}1,j),\, D(i,j{-}1),\, D(i{-}1,j{-}1)\big)
+\label{eq:dtw}
+\end{equation}
+
+\noindent with $D(0,0) = 0$ and $d(x_i,y_j) = (x_i - y_j)^2$ the
+local pointwise cost. A Sakoe--Chiba band of radius $r$ constrains
+the alignment path to $|i-j| \leq r$, preventing pathological
+warps and bounding computation to $O(rW)$ per pair instead of
+$O(W^2)$. Under this metric, a single blink (one bump), a
+double blink (two bumps), and a genuinely-clean or contaminated
+window each have a distinct \emph{shape}, largely independent of
+exactly when each bump occurs --- so a contaminated single-blink
+window, while it may fool a peak counter, still has a shape closest
+to other single-blink exemplars rather than to double-blink ones.
+
+\textbf{Method:}
+
+\begin{lstlisting}[language=Python,
+    caption={DTW blink sub-classifier pipeline (Stage~2a,
+    production).},
+    label={lst:dtw}]
+from tslearn.preprocessing import TimeSeriesScalerMeanVariance
+from tslearn.neighbors import KNeighborsTimeSeriesClassifier
+
+blink_pipeline_steps = [
+    TimeSeriesScalerMeanVariance(),
+    KNeighborsTimeSeriesClassifier(
+        n_neighbors=5,
+        metric="dtw",
+        metric_params={"sakoe_chiba_radius": 10}
+    )
+]
+\end{lstlisting}
+
+\noindent applied to the z-scored frontal waveform (the mean of
+Fp1, Fp2, Fz) of each epoch already routed to ``blink'' by Stage~1.
+
+\textbf{Critical sub-finding --- exemplar voting beats averaging:}
+\acrshort{dtw} \emph{barycenter} templates (one averaged prototype
+per class, compared by \acrshort{dtw} distance) were also tried and
+\emph{failed} outright (50.5\% accuracy), because the contaminated
+\code{single\_blink} class has no meaningful average shape to
+compute --- averaging a clean single-bump trial with a contaminated
+triple-bump trial produces a template that resembles neither.
+\textbf{$k$-nearest-neighbour exemplar voting} is what survives the
+contamination: a noisy single-blink window still lands nearest to
+\emph{some} genuinely clean single-blink exemplar in the training
+set, even when it cannot be meaningfully averaged or counted.
+
+\subsection{Results}
+
+Table~\ref{tab:dtw_results} shows the final blink-branch comparison
+under \acrshort{loso}.
+
+\begin{table}[htbp]
+\centering
+\caption{DTW blink branch vs.\ Riemannian-hybrid blink branch
+(which still used hand-crafted peak features for Stage~2a), LOSO
+protocol.}
+\label{tab:dtw_results}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l c c c c}
+\toprule
+\textbf{Model} & \textbf{Overall} & \textbf{macro-F1} &
+\textbf{S (double)} & \textbf{O (single)} \\
+\midrule
+Riemann hybrid & 89.2\% & 0.888 & 0.742 & 0.778 \\
+\textbf{DTW hybrid (final)} & \textbf{91.3\%} & \textbf{0.913} &
+\textbf{0.806} & \textbf{0.841} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $+2.1$-point gain (89.2\%~$\rightarrow$~91.3\%) is entirely
+attributable to the blink branch, and completes the final
+production architecture.
+
+%% ----------------------------------------------------------
+\section{Final Architecture: The Three-Way Hybrid}
+\label{sec:cl_architecture}
+%% ----------------------------------------------------------
+
+The production model, serialised as \code{dtw\_hybrid\_model.pkl},
+routes each gesture family to the classification method
+physiologically matched to it, illustrated in
+Figure~\ref{fig:final_arch}.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.55cm and 1.0cm,
+    box/.style={rectangle, rounded corners=3pt, draw=black,
+                fill=blue!10, minimum width=4.6cm,
+                minimum height=0.8cm, align=center, font=\small},
+    arrow/.style={-{Stealth[length=5pt]}, thick}
+]
+\node[box, fill=green!15] (win) {Window (2.0\,s)};
+\node[box, below=of win] (gate) {Activity Gate};
+\node[box, below=of gate] (s1)
+    {Stage 1: blink vs.\ muscle (features)};
+\node[box, fill=blue!10, below left=0.9cm and 0.3cm of s1] (s2a)
+    {Stage 2a: S vs.\ O\\\acrshort{dtw}-KNN on waveform\\(shape
+    $>$ count)};
+\node[box, fill=orange!15, below right=0.9cm and 0.3cm of s1] (s2b)
+    {Stage 2b: C vs.\ L vs.\ R\\Riemannian covariance\\(covariance
+    $>$ amplitude)};
+\node[box, fill=purple!10, below=2.6cm of s1, minimum width=6.4cm]
+    (merge) {Confidence gate ($>0.60$)};
+\node[box, fill=purple!10, below=of merge, minimum width=6.4cm]
+    (fsm) {\acrshort{fsm} (3 consecutive identical predictions)};
+\node[box, fill=red!10, below=of fsm, minimum width=6.4cm]
+    (out) {\acrshort{uart} output: O / S / C / L / R (Chapter~12)};
+
+\draw[arrow] (win) -- (gate);
+\draw[arrow] (gate) -- (s1);
+\draw[arrow] (s1.south) -| node[near start, above,
+    font=\scriptsize]{blink} (s2a.north);
+\draw[arrow] (s1.south) -| node[near start, above,
+    font=\scriptsize]{muscle} (s2b.north);
+\draw[arrow] (s2a.south) |- (merge.west);
+\draw[arrow] (s2b.south) |- (merge.east);
+\draw[arrow] (merge) -- (fsm);
+\draw[arrow] (fsm) -- (out);
+\end{tikzpicture}
+\caption{The final three-way hybrid architecture. Training-time
+routing (Stage 1, 2a, 2b) is the focus of this chapter; the
+confidence gate, FSM, and UART output are real-time deployment
+mechanics covered in full in Chapter~12.}
+\label{fig:final_arch}
+\end{figure}
+
+Table~\ref{tab:why_each_method} summarises why each branch uses the
+method it does, tying together the narrative of this chapter.
+
+\begin{table}[htbp]
+\centering
+\caption{Why each branch of the final architecture uses the method
+it does.}
+\label{tab:why_each_method}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{p{2.3cm} p{3.4cm} p{6.0cm}}
+\toprule
+\textbf{Branch} & \textbf{Method} &
+\textbf{Physiological rationale} \\
+\midrule
+Stage 1 & Hand-crafted features (Chapter~8) & \acrshort{eog} vs.\
+    \acrshort{emg} separation is an easy problem (98--100\%
+    accuracy); no need for a more elaborate representation. \\
+Stage 2a (blink) & \acrshort{dtw} shape-matching & Temporal
+    pattern (bump count and shape) survives label contamination
+    that defeats every counting-based method. \\
+Stage 2b (muscle) & Riemannian covariance & Spatial covariance
+    structure survives cross-session amplitude drift that defeats
+    every amplitude-based feature. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ----------------------------------------------------------
+\section{Performance Progression}
+\label{sec:cl_progression}
+%% ----------------------------------------------------------
+
+Table~\ref{tab:progression} traces the cumulative effect of every
+architectural decision documented in this chapter, from the flat
+baseline to the final production model, all under the honest
+\acrshort{loso} protocol.
+
+\begin{table}[htbp]
+\centering
+\caption{Cumulative performance progression under LOSO. Each row
+adds exactly one architectural change over the row above it.}
+\label{tab:progression}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l c c c}
+\toprule
+\textbf{Architecture} & \textbf{Overall} & \textbf{macro-F1} &
+\textbf{$\Delta$ vs.\ previous} \\
+\midrule
+Flat Random Forest & 85.1\% & 0.837 & --- \\
+Hierarchical (physiology-routed) & 85.1\% & 0.839 &
+    $+0.0$pt (better macro-F1, cleaner routing) \\
++ Riemannian muscle branch & 89.2\% & 0.888 & $+4.1$pt \\
+\textbf{+ DTW blink branch (final)} & \textbf{91.3\%} &
+    \textbf{0.913} & \textbf{$+2.1$pt} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:final_f1} gives the final per-class F1 scores of the
+production model; the full confusion matrix and per-class
+precision/recall breakdown are presented in Chapter~10.
+
+\begin{table}[htbp]
+\centering
+\caption{Final per-class F1 scores, DTW hybrid model, LOSO
+protocol.}
+\label{tab:final_f1}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{c l c}
+\toprule
+\textbf{Command} & \textbf{Class} & \textbf{F1} \\
+\midrule
+S & \code{double\_blink}  & 0.806 \\
+O & \code{single\_blink}  & 0.841 \\
+C & \code{clinch}         & 0.952 \\
+L & \code{bruxism\_left}  & 0.984 \\
+R & \code{bruxism\_right} & 0.983 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The pattern across the whole progression is consistent with the
+chapter's central argument: every gain came from matching a
+classification method to the physiology of the signal it processes
+(Riemannian covariance for amplitude-drift-prone muscle signals,
+\acrshort{dtw} shape-matching for contamination-prone blink
+signals), not from adding more features or more classifier
+complexity to a single flat model.
+
+%% ----------------------------------------------------------
+\section{Chapter Summary}
+\label{sec:cl_summary}
+%% ----------------------------------------------------------
+
+This chapter presented the complete classification and training
+methodology. An evaluation methodology crisis was identified and
+resolved: naive random cross-validation inflated accuracy by
+exploiting 75\% epoch overlap, diagnosed through a four-test
+leakage audit (strict cross-session check, preprocessing-leak
+check, overlap check, and a shuffle test at 21\% $\approx$ chance),
+leading to the adoption of Leave-One-Session-Out as the sole
+protocol for honest reporting. A flat Random Forest baseline
+(85.1\% \acrshort{loso}) was superseded by a hierarchical,
+physiology-routed architecture (85.1\%, improved macro-F1 0.839),
+motivated by Chapter~8's finding that no single feature family
+helps both blink and muscle classes simultaneously. The muscle
+branch was then upgraded to Riemannian covariance geometry
+(+4.1\,pt, 89.2\%), exploiting covariance structure's robustness
+to cross-session amplitude drift. Finally, after four
+counting-based methods failed to resolve the blink sub-classification
+ceiling --- failures traced to a critical data-quality finding
+(Chapter~6) that $\sim$45\% of \code{single\_blink} recordings are
+contaminated with multi-blink bursts --- Dynamic Time Warping
+shape-matching with $k$-nearest-neighbour exemplar voting resolved
+it (+2.1\,pt, \textbf{91.3\% final \acrshort{loso} accuracy,
+macro-F1 0.913}). The resulting three-way hybrid architecture
+routes each gesture family to the method physiologically matched to
+it: hand-crafted features for the easy blink/muscle split,
+\acrshort{dtw} for contamination-resistant blink shape-matching,
+and Riemannian geometry for drift-resistant muscle covariance. The
+following chapter presents the detailed results and analysis of
+this final model, including the full confusion matrix and
+per-class precision/recall breakdown.

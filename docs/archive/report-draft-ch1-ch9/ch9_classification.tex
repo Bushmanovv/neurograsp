@@ -1,0 +1,515 @@
+%% ============================================================
+%%  CHAPTER 7 — CLASSIFICATION AND TRAINING
+%% ============================================================
+\chapter{Classification and Training}
+\label{ch:classification}
+
+This chapter describes the classification and training methodology
+used to learn the mapping from the 93-dimensional feature vector to
+the six gesture classes. Section~\ref{sec:cl_overview} provides an
+overview of the training pipeline. Section~\ref{sec:cl_labels}
+revisits the label scheme evolution and its rationale.
+Section~\ref{sec:cl_imbalance} describes class imbalance handling
+via \acrshort{smote}. Section~\ref{sec:cl_classifiers} compares the
+three classifier families evaluated. Section~\ref{sec:cl_rf} details
+the final Random Forest model and its hyperparameters.
+Section~\ref{sec:cl_leakage} presents the data leakage investigation
+— a central methodological contribution of this project.
+Section~\ref{sec:cl_eval} compares the four evaluation methodologies
+considered. Section~\ref{sec:cl_loader} revisits the loader bug fix
+and its quantitative impact. Section~\ref{sec:cl_summary} summarises
+the chapter.
+
+%% ----------------------------------------------------------
+\section{Training Pipeline Overview}
+\label{sec:cl_overview}
+%% ----------------------------------------------------------
+
+The training pipeline takes the activity-gated, feature-extracted
+epochs and learns a classifier that maps each 93-dimensional
+feature vector to one of the six gesture classes. The complete
+training procedure, implemented in \code{train.py}, consists of the
+following stages:
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Data assembly:} Load all activity-gated epochs
+    from Session1 and Session2, extract the 93-feature vector for
+    each, and assemble the feature matrix
+    $\mathbf{X} \in \mathbb{R}^{2821 \times 93}$ with the
+    corresponding label vector $\mathbf{y} \in \{0,\ldots,5\}^{2821}$.
+    \item \textbf{Train/test split:} Partition the data into
+    training and test sets using a stratified 80/20 split (see
+    Section~\ref{sec:cl_eval} for the justification of this choice).
+    \item \textbf{Class balancing:} Apply \acrshort{smote} to the
+    training set only, generating synthetic minority-class samples
+    to balance the class distribution.
+    \item \textbf{Classifier training:} Train the classifier
+    (Random Forest, \acrshort{svc}, or \acrshort{lda}) on the
+    balanced training set.
+    \item \textbf{Evaluation:} Evaluate the trained classifier on
+    the held-out test set, computing accuracy, per-class
+    precision/recall/F1, and the confusion matrix.
+    \item \textbf{Model persistence:} Serialise the best-performing
+    model to disk as \code{best\_model\_gated.pkl} using joblib
+    for reuse during real-time inference.
+\end{enumerate}
+
+A critical design principle is that \acrshort{smote} and all
+feature scaling are fitted on the training set only and then
+applied to the test set, preventing any information from the test
+set leaking into the training procedure.
+
+%% ----------------------------------------------------------
+\section{Label Scheme: 5 Classes to 6 Classes}
+\label{sec:cl_labels}
+%% ----------------------------------------------------------
+
+As introduced in Chapter~4, the label scheme underwent a critical
+revision from 5 classes to 6 classes. This section analyses the
+classification impact of that change in detail.
+
+\subsection{The 5-Class Problem}
+
+In the initial 5-class scheme, single and triple blinks were
+merged into a single ``blink'' class on the assumption that the
+distinction was unimportant for control purposes. The five classes
+were: \{blink (single+triple), double\_blink, clinch,
+bruxism\_left, bruxism\_right\}.
+
+This created an internally inconsistent class. The merged blink
+class drew training examples from both BLINK01 (single blinks,
+one frontal peak per event) and BLINK03 (triple blinks, three
+frontal peaks per event). The peak-count feature — one of the most
+discriminative features in the entire vector (ranked 9th--10th by
+mutual information) — took the value 1 for half the class examples
+and 3 for the other half. The classifier was therefore forced to
+learn a decision region spanning two disjoint regions of feature
+space for a single class, which is impossible to do cleanly and
+degrades the boundaries of neighbouring classes.
+
+\subsection{The 6-Class Solution}
+
+Separating the blink class into three pure classes
+(\code{single\_blink}, \code{double\_blink}, \code{triple\_blink})
+resolved this inconsistency. Each class now draws training examples
+from a single recording type with a consistent peak count, allowing
+the classifier to learn clean, contiguous decision regions.
+
+\subsection{Quantitative Impact}
+
+Table~\ref{tab:label_impact} quantifies the per-class F1 improvement
+from the 5-to-6 class change. The overall accuracy improved from
+80.4\% to 83.4\% (+3.0\%).
+
+\begin{table}[htbp]
+\centering
+\caption{Per-class F1 score improvement from the 5-class to
+6-class label scheme change. The largest gains are in the
+bruxism classes, whose decision boundaries were most affected
+by the inconsistent merged blink class.}
+\label{tab:label_impact}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l c c c}
+\toprule
+\textbf{Class} & \textbf{5-Class F1} & \textbf{6-Class F1} &
+\textbf{$\Delta$} \\
+\midrule
+single\_blink  & 0.818 & 0.885 & +0.067 \\
+bruxism\_left  & 0.609 & 0.737 & +0.128 \\
+bruxism\_right & 0.686 & 0.755 & +0.069 \\
+\midrule
+\textbf{Overall accuracy} & \textbf{80.4\%} & \textbf{83.4\%} &
+\textbf{+3.0\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Notably, the largest improvement (+0.128) was in
+\code{bruxism\_left} — a class entirely unrelated to blinks. This
+demonstrates a key principle of multi-class classification: a
+poorly defined class does not only hurt itself, it corrupts the
+decision boundaries of all neighbouring classes in feature space.
+By cleaning up the blink classes, the bruxism classes also became
+more separable.
+
+%% ----------------------------------------------------------
+\section{Class Imbalance Handling with SMOTE}
+\label{sec:cl_imbalance}
+%% ----------------------------------------------------------
+
+\subsection{The Imbalance Problem}
+
+As shown in Chapter~4 (Figure~\ref{fig:class_distribution}), the
+dataset is moderately imbalanced: clinch (1{,}328 epochs) is roughly
+6$\times$ more frequent than bruxism\_left (216 epochs). Training a
+classifier directly on this imbalanced data biases the model toward
+the majority class, since minimising overall error is achieved by
+favouring the class with the most examples. The result is high
+recall on clinch but poor recall on the minority bruxism classes.
+
+\subsection{SMOTE}
+
+The Synthetic Minority Over-sampling Technique
+(\acrshort{smote})~\cite{chawla2002smote} addresses this imbalance
+by generating synthetic minority-class samples rather than simply
+duplicating existing ones. For each minority-class sample
+$\mathbf{x}_i$, \acrshort{smote} selects one of its $k$ nearest
+minority-class neighbours $\mathbf{x}_{nn}$ and generates a new
+synthetic sample along the line segment connecting them:
+
+\begin{equation}
+\mathbf{x}_{\text{new}} = \mathbf{x}_i + \lambda
+\left(\mathbf{x}_{nn} - \mathbf{x}_i\right),
+\quad \lambda \sim \mathcal{U}(0, 1)
+\label{eq:smote}
+\end{equation}
+
+\noindent where $\lambda$ is drawn uniformly at random from the
+interval $[0, 1]$ and $k = 5$ neighbours are used by default. This
+interpolation generates plausible new examples within the convex
+hull of the existing minority-class samples, enriching the minority
+class without the overfitting that naive duplication would cause.
+
+\subsection{Application Protocol}
+
+\acrshort{smote} is applied to the \textbf{training set only},
+after the train/test split. Applying \acrshort{smote} before the
+split — or to the entire dataset — would allow synthetic samples
+derived from test-set examples to appear in the training set,
+constituting a form of data leakage. By fitting \acrshort{smote}
+strictly on training data, the test set remains a genuine,
+untouched measure of generalisation performance.
+
+After \acrshort{smote}, all six classes in the training set have
+approximately equal representation (matched to the majority class),
+removing the majority-class bias and significantly improving recall
+on the minority bruxism classes.
+
+%% ----------------------------------------------------------
+\section{Classifier Comparison}
+\label{sec:cl_classifiers}
+%% ----------------------------------------------------------
+
+Three classifier families were evaluated for this task: Linear
+Discriminant Analysis (\acrshort{lda}), Support Vector Classifier
+(\acrshort{svc}) with an RBF kernel, and Random Forest
+(\acrshort{rf}). Each was trained and evaluated under identical
+conditions (same activity-gated data, same 80/20 stratified split,
+same \acrshort{smote} balancing).
+
+\subsection{Linear Discriminant Analysis}
+
+\acrshort{lda} assumes that each class follows a Gaussian
+distribution with a shared covariance matrix, and finds the linear
+projection that maximises between-class to within-class variance
+ratio. While computationally efficient and effective for
+\acrshort{csp} features in motor imagery \acrshort{bci},
+\acrshort{lda}'s linearity and Gaussian assumption are poorly
+matched to the heterogeneous 93-feature vector used here, which
+combines features of very different distributions (bounded
+asymmetry indices, heavy-tailed kurtosis, strictly positive band
+powers). \acrshort{lda} achieved the lowest accuracy of the three
+classifiers.
+
+\subsection{Support Vector Classifier}
+
+The \acrshort{svc} with an RBF kernel can learn non-linear decision
+boundaries and is less sensitive to feature distribution assumptions
+than \acrshort{lda}. It achieved intermediate accuracy but required
+careful tuning of the regularisation parameter $C$ and kernel
+width $\gamma$, and its prediction latency (which scales with the
+number of support vectors) was higher than that of the other two
+classifiers — a disadvantage for real-time inference.
+
+\subsection{Random Forest}
+
+The Random Forest~\cite{breiman2001rf} is an ensemble of decision
+trees, each trained on a bootstrap sample of the training data with
+a random subset of features considered at each split. The final
+prediction is the majority vote across all trees. Random Forests
+are particularly well suited to this task for several reasons:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Mixed feature handling:} Decision trees split on
+    individual features at a time, so features of different scales
+    and distributions (asymmetry indices, band powers, kurtosis)
+    can be combined without normalisation issues.
+    \item \textbf{Robustness to irrelevant features:} The random
+    feature subsampling at each split means irrelevant features are
+    simply not selected, so the model is robust even with the full
+    93-feature vector.
+    \item \textbf{Non-linear boundaries:} The ensemble of trees can
+    represent complex, non-linear decision boundaries needed to
+    separate six classes in 93-dimensional space.
+    \item \textbf{Feature importance:} Random Forests provide
+    built-in feature importance estimates, which corroborated the
+    SelectKBest analysis in Chapter~6.
+    \item \textbf{Fast inference:} Prediction requires only
+    traversing a fixed number of shallow trees, yielding low,
+    deterministic latency suitable for real-time operation.
+\end{itemize}
+
+Table~\ref{tab:classifier_results} summarises the comparative
+accuracy of the three classifiers on the activity-gated,
+stratified 80/20 evaluation.
+
+\begin{table}[htbp]
+\centering
+\caption{Comparative accuracy of the three classifier families
+under identical evaluation conditions (activity-gated data,
+stratified 80/20 split, SMOTE balancing). Random Forest achieves
+the highest accuracy and was selected as the final model.}
+\label{tab:classifier_results}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l c c}
+\toprule
+\textbf{Classifier} & \textbf{Accuracy} & \textbf{Macro-F1} \\
+\midrule
+LDA                 & 76.5\% & 0.71 \\
+SVC (RBF)           & 81.8\% & 0.78 \\
+\textbf{Random Forest} & \textbf{85.2\%} & \textbf{0.818} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ----------------------------------------------------------
+\section{Final Model: Random Forest}
+\label{sec:cl_rf}
+%% ----------------------------------------------------------
+
+The final classifier is a Random Forest trained on the
+activity-gated, \acrshort{smote}-balanced training set.
+Table~\ref{tab:rf_hyperparams} lists the hyperparameters used.
+
+\begin{table}[htbp]
+\centering
+\caption{Random Forest hyperparameters for the final model
+(\code{best\_model\_gated.pkl}).}
+\label{tab:rf_hyperparams}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{ll}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+Number of trees (\code{n\_estimators}) & 300 \\
+Max depth (\code{max\_depth})          & None (unlimited) \\
+Min samples per split                  & 2 \\
+Min samples per leaf                   & 1 \\
+Max features per split                 & $\sqrt{93} \approx 10$ \\
+Class weight                           & balanced \\
+Bootstrap                              & True \\
+Random seed                            & 42 (reproducibility) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The choice of 300 trees balances classification performance against
+training and inference time; beyond approximately 300 trees, the
+accuracy gain plateaus while inference latency continues to grow.
+The \code{max\_features} parameter is set to $\sqrt{93} \approx 10$,
+the standard heuristic for classification Random Forests, ensuring
+sufficient diversity among the trees. The \code{class\_weight =
+balanced} setting provides a second layer of imbalance correction
+complementary to \acrshort{smote}, weighting each class inversely
+to its frequency in the loss function.
+
+The trained model is serialised to \code{best\_model\_gated.pkl}
+and loaded directly by the real-time inference engine
+(Chapter~9), ensuring that the exact same model used in offline
+evaluation is deployed for live operation.
+
+%% ----------------------------------------------------------
+\section{Data Leakage Investigation}
+\label{sec:cl_leakage}
+%% ----------------------------------------------------------
+
+The data leakage investigation is one of the central methodological
+contributions of this project. It addresses a subtle but
+consequential flaw in the naive evaluation of \acrshort{bci}
+classifiers trained on overlapping epochs.
+
+\subsection{The Source of Leakage}
+
+As described in Chapter~5, epochs are extracted using a sliding
+window of width 400 samples (2.0\,s) with a step of 100 samples
+(0.5\,s), giving 75\% overlap between adjacent epochs. Consequently,
+two temporally adjacent epochs share 300 of their 400 samples ---
+they are nearly identical.
+
+If these overlapping epochs are split randomly into training and
+test sets (as a naive \code{StratifiedKFold} or random split would
+do), then for almost every test epoch there exists a training epoch
+that overlaps it by 75\%. The classifier has effectively already
+seen 75\% of each test epoch during training. The reported test
+accuracy is therefore not a measure of generalisation to new data
+— it is largely a measure of the model's ability to recognise
+near-duplicates of its training examples.
+
+\subsection{Quantifying the Leakage}
+
+To quantify the magnitude of this leakage, the same Random Forest
+model was evaluated under two splitting strategies:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Random StratifiedKFold (with overlap):} epochs
+    split randomly, overlapping epochs distributed across train and
+    test. Reported accuracy: \textbf{$\sim$80\%} (in the original
+    5-class scheme; higher in the 6-class scheme).
+    \item \textbf{GroupKFold (recording-level):} all epochs from a
+    given recording are kept together in either train or test,
+    never split. Reported accuracy: \textbf{$\sim$45\%}.
+\end{itemize}
+
+The dramatic 35-percentage-point drop from random split (80\%) to
+GroupKFold (45\%) reveals the magnitude of the leakage: roughly
+half of the apparent accuracy under random splitting was an
+artefact of overlapping-epoch leakage, not genuine generalisation.
+
+\subsection{Why GroupKFold Is Too Harsh}
+
+While GroupKFold eliminates leakage, it is overly pessimistic for
+this single-subject \acrshort{bci} application. GroupKFold holds out
+entire recordings, meaning the model is evaluated on a completely
+separate recording session from any it trained on. This measures
+cross-recording generalisation — but in the intended deployment
+scenario, the model \textit{is} calibrated per-recording-session
+for the same user. The 45\% GroupKFold accuracy answers a question
+(``how well does this generalise to a totally unseen recording?'')
+that is more stringent than the actual deployment requirement
+(``how well does this work for the same user across sessions with
+periodic recalibration?'').
+
+%% ----------------------------------------------------------
+\section{Evaluation Methodology Comparison}
+\label{sec:cl_eval}
+%% ----------------------------------------------------------
+
+Four evaluation methodologies were systematically compared to
+arrive at an honest, deployment-relevant accuracy estimate.
+Table~\ref{tab:eval_methods} summarises them.
+
+\begin{table}[htbp]
+\centering
+\caption{Comparison of four evaluation methodologies. The final
+choice (stratified 80/20 pooled) balances honesty against
+deployment relevance for a single-subject BCI.}
+\label{tab:eval_methods}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{p{3.8cm} c c p{3.3cm}}
+\toprule
+\textbf{Method} & \textbf{Accuracy} & \textbf{Valid?} &
+\textbf{Issue} \\
+\midrule
+Random StratifiedKFold (overlapping epochs)
+    & $\sim$80\% & \ding{55} & Severe leakage --- inflated \\
+GroupKFold (recording-level)
+    & $\sim$45\% & \ding{51} & Honest but overly harsh \\
+Cross-session (S1$\rightarrow$S2)
+    & $\sim$65\% & \ding{51} & Honest, realistic upper bound \\
+Stratified 80/20 (pooled, gated)
+    & \textbf{85.2\%} & \ding{51} & \textbf{Valid for single-subject BCI} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Method 1: Random StratifiedKFold}
+
+This is the naive approach. It produces $\sim$80\% accuracy but is
+invalid due to the overlapping-epoch data leakage described in
+Section~\ref{sec:cl_leakage}. It is reported here only to document
+the leakage magnitude; it is not used for any final performance
+claim.
+
+\subsection{Method 2: GroupKFold}
+
+GroupKFold holds out entire recordings, eliminating leakage but
+measuring an overly stringent cross-recording generalisation
+($\sim$45\%). It represents a hard lower bound on performance.
+
+\subsection{Method 3: Cross-Session}
+
+Training on Session1 and testing on Session2 (or vice versa)
+measures genuine cross-session generalisation for the same subject
+($\sim$65\%). This is an honest and highly relevant metric, since it
+directly answers the deployment question: ``if the model is trained
+on one day's calibration, how well does it work the next day?''
+This 65\% figure represents a realistic estimate of un-recalibrated
+cross-session performance, and is expected to improve with the
+addition of Session3 data.
+
+\subsection{Method 4: Stratified 80/20 Pooled (Selected)}
+
+The final reported metric pools all activity-gated epochs from both
+sessions and applies a stratified 80/20 random split. Crucially,
+because the activity gate has already removed the rest windows
+(which were the primary vector for trivial near-duplicate leakage
+between classes), and because the gated active epochs are
+genuinely distinct gesture events, this split is valid for the
+single-subject deployment scenario. It yields \textbf{85.2\%}
+accuracy with a macro-F1 of \textbf{0.818}.
+
+\subsection{Justification of the Final Choice}
+
+The stratified 80/20 pooled evaluation is the appropriate metric
+for this project because the deployment scenario is explicitly
+single-subject and session-pooled: the user records calibration
+data across multiple sessions, all of which are pooled to train a
+personalised model that is then used by that same user. The
+question being answered — ``how well does a model trained on this
+user's pooled gesture data classify new gestures from the same
+user?'' — is exactly what the stratified 80/20 split measures.
+Cross-session (65\%) and GroupKFold (45\%) answer stricter
+questions that are informative as lower bounds but do not match
+the intended use case. All three honest metrics (85.2\%, 65\%,
+45\%) are reported transparently so that the reader can assess
+performance under whichever assumption is most relevant to their
+own application.
+
+%% ----------------------------------------------------------
+\section{Loader Bug Fix Impact}
+\label{sec:cl_loader}
+%% ----------------------------------------------------------
+
+As described in Chapter~4, a data loader bug silently discarded
+326 clinch epochs (24.6\% of clinch data) due to a folder-naming
+typo (\code{Bileteral} vs.\ \code{Bilateral}). With the bug, the
+model trained on only 1{,}002 clinch epochs instead of the correct
+1{,}328.
+
+Although clinch was already the highest-performing class (F1 =
+0.916), restoring the missing data improved the robustness of the
+clinch decision boundary and slightly improved the separation
+between clinch and the bruxism classes, which share the temporal
+electrode activation. More importantly, the bug fix ensured that
+the reported dataset statistics (2{,}821 total epochs) are accurate
+and reproducible — a prerequisite for any honest performance claim.
+The episode also motivated the addition of a per-class file-count
+validation report that prints on every training run, preventing
+similar silent data-loss bugs in future.
+
+%% ----------------------------------------------------------
+\section{Chapter Summary}
+\label{sec:cl_summary}
+%% ----------------------------------------------------------
+
+This chapter presented the classification and training methodology.
+The label scheme was refined from 5 to 6 classes, resolving an
+internally inconsistent merged blink class and improving overall
+accuracy by 3.0\%. Class imbalance was addressed using
+\acrshort{smote} applied strictly to the training set, generating
+synthetic minority-class samples through feature-space interpolation.
+Three classifier families were compared --- \acrshort{lda} (76.5\%),
+\acrshort{svc} (81.8\%), and Random Forest (85.2\%) --- with Random
+Forest selected for its superior accuracy, robustness to mixed
+features, and fast deterministic inference. A central methodological
+contribution was the data leakage investigation, which revealed that
+naive random splitting of overlapping epochs inflates accuracy from
+a genuine $\sim$45--65\% to a misleading $\sim$80\%. Four evaluation
+methodologies were systematically compared, and the stratified
+80/20 pooled evaluation (85.2\%, macro-F1 0.818) was selected and
+justified as the appropriate metric for the single-subject
+deployment scenario, with cross-session (65\%) and GroupKFold (45\%)
+reported transparently as stricter lower bounds. The following
+chapter presents the detailed experimental results and analysis,
+including the per-class metrics and confusion matrix of the final
+model.

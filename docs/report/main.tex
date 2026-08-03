@@ -1,0 +1,364 @@
+%% ============================================================
+%%  EEG-Based BCI for Prosthetic Hand Control
+%%  Birzeit University — ENCS5300 Final Graduation Project
+%%  June 2026
+%% ============================================================
+
+\documentclass[12pt, a4paper, twoside]{report}
+
+%% ---- Packages -----------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[a4paper,
+            top=2.5cm, bottom=2.5cm,
+            inner=3.0cm, outer=2.5cm]{geometry}
+
+% Typography
+\usepackage{microtype}
+\usepackage{setspace}
+\onehalfspacing
+
+% Math
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+
+% Figures & Tables
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{colortbl}
+\usepackage[table]{xcolor}
+
+% Code listings
+\usepackage{listings}
+\usepackage{lstautogobble}
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray},
+    stringstyle=\color{red!70!black},
+    backgroundcolor=\color{gray!5},
+    autogobble=true
+}
+
+% Hyperlinks & PDF metadata
+\usepackage[hidelinks,
+            pdftitle={EEG-Based BCI for Prosthetic Hand Control},
+            pdfauthor={Dwikat, Abu Khalil, Assi},
+            pdfsubject={Brain-Computer Interface, EEG, Prosthetic Hand},
+            pdfkeywords={BCI, EEG, Artifact Classification, Prosthetic Hand,
+                         RandomForest, Real-Time Inference}
+            ]{hyperref}
+
+% Headers & Footers
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\small\thepage}
+\fancyhead[RE]{\small\leftmark}
+\fancyhead[LO]{\small\rightmark}
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Chapter/Section styling
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\Large\bfseries\centering}
+  {CHAPTER \thechapter}{10pt}{\Large\MakeUppercase}
+\titlespacing*{\chapter}{0pt}{30pt}{20pt}
+
+% Captions
+\usepackage[labelfont=bf, textfont=it, justification=centering]{caption}
+
+% Acronyms
+\usepackage[acronym, toc, nonumberlist]{glossaries}
+\makeglossaries
+
+% Algorithms
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% Diagrams (TikZ)
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning,
+                fit, backgrounds, calc, decorations.pathreplacing}
+
+% Utilities
+\usepackage{enumitem}
+\usepackage{pifont}
+\usepackage{textcomp}
+\usepackage{siunitx}
+\usepackage{cite}
+\usepackage{url}
+
+%% ---- Acronyms -----------------------------------------------
+\newacronym{bci}{BCI}{Brain--Computer Interface}
+\newacronym{eeg}{EEG}{Electroencephalography}
+\newacronym{emg}{EMG}{Electromyography}
+\newacronym{csp}{CSP}{Common Spatial Patterns}
+\newacronym{lda}{LDA}{Linear Discriminant Analysis}
+\newacronym{rf}{RF}{Random Forest}
+\newacronym{svm}{SVM}{Support Vector Machine}
+\newacronym{svc}{SVC}{Support Vector Classifier}
+\newacronym{car}{CAR}{Common Average Reference}
+\newacronym{fsm}{FSM}{Finite State Machine}
+\newacronym{rms}{RMS}{Root Mean Square}
+\newacronym{ptp}{PTP}{Peak-to-Peak}
+\newacronym{psd}{PSD}{Power Spectral Density}
+\newacronym{smote}{SMOTE}{Synthetic Minority Over-sampling Technique}
+\newacronym{fdm}{FDM}{Fused Deposition Modeling}
+\newacronym{pla}{PLA}{Polylactic Acid}
+\newacronym{pwm}{PWM}{Pulse Width Modulation}
+\newacronym{edf}{EDF}{European Data Format}
+\newacronym{snr}{SNR}{Signal-to-Noise Ratio}
+\newacronym{erd}{ERD}{Event-Related Desynchronization}
+\newacronym{ers}{ERS}{Event-Related Synchronization}
+\newacronym{mi}{MI}{Motor Imagery}
+\newacronym{dof}{DOF}{Degrees of Freedom}
+\newacronym{eog}{EOG}{Electrooculography}
+\newacronym{dtw}{DTW}{Dynamic Time Warping}
+\newacronym{loso}{LOSO}{Leave-One-Session-Out}
+\newacronym{knn}{KNN}{$k$-Nearest Neighbours}
+\newacronym{tkeo}{TKEO}{Teager--Kaiser Energy Operator}
+\newacronym{dwt}{DWT}{Discrete Wavelet Transform}
+\newacronym{mdm}{MDM}{Minimum Distance to Mean}
+\newacronym{oas}{OAS}{Oracle Approximating Shrinkage}
+\newacronym{gpio}{GPIO}{General-Purpose Input/Output}
+\newacronym{ptfe}{PTFE}{Polytetrafluoroethylene}
+\newacronym{smps}{SMPS}{Switched-Mode Power Supply}
+\newacronym{rest}{REST}{Representational State Transfer}
+\newacronym{uart}{UART}{Universal Asynchronous Receiver/Transmitter}
+
+%% ---- Custom colours -----------------------------------------
+\definecolor{bzu-green}{RGB}{0, 100, 60}
+\definecolor{light-gray}{gray}{0.92}
+\definecolor{mid-gray}{gray}{0.55}
+
+%% ---- Custom commands ----------------------------------------
+\newcommand{\uV}{\si{\micro\volt}}
+\newcommand{\Hz}{\si{\hertz}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\TODO}[1]{\textcolor{red}{\textbf{[TODO: #1]}}}
+
+%% Make the bibliography chapter title and running header read
+%% "References" (matches the TOC entry; report class defaults to
+%% "Bibliography").
+\renewcommand{\bibname}{References}
+
+%% ============================================================
+%%  DOCUMENT START
+%% ============================================================
+\begin{document}
+
+%% ---- COVER PAGE --------------------------------------------
+\begin{titlepage}
+    \centering
+    \vspace*{0.2cm}
+
+    % University logo
+    \includegraphics[width=0.25\textwidth]{Assets/birzeit_logo.png}\\[0.3cm]
+
+    {\Large \textbf{BIRZEIT UNIVERSITY}}\\[0.2cm]
+    {\normalsize Faculty of Engineering \& Technology}\\[0.05cm]
+    {\normalsize Electrical \& Computer Engineering Department}\\[0.05cm]
+    {\normalsize Graduation Project ENCS5300}\\[0.9cm]
+
+    {\LARGE \textbf{EEG-Based Brain--Computer Interface for\\[0.2cm]
+    Prosthetic Hand Control: An Artifact Signal Approach}}\\[1.2cm]
+
+    {\large \textbf{Prepared By:}}\\[0.35cm]
+
+    {\normalsize Abdalkarim Dwikat \quad 1210288}\\[0.15cm]
+    {\normalsize Baha Abu Khalil \quad\quad 1210442}\\[0.15cm]
+    {\normalsize Qussai Assi \quad\quad\quad\quad 1211204}\\[0.8cm]
+
+    {\large \textbf{Supervised by:}}\\[0.25cm]
+    {\normalsize Dr.\ Qadri Mayyala}\\[0.8cm]
+
+    {\large \textbf{Section:}}\\[0.15cm]
+    {\normalsize 21}\\[0.0cm]
+
+    \vfill
+
+    {\normalsize
+    Graduation Project submitted to the Department of Electrical\\
+    and Computer Engineering in partial fulfillment of the requirements\\
+    for the degree of B.Sc.\ in Computer Systems Engineering}\\[0.5cm]
+
+    {\normalsize BIRZEIT}\\[0.15cm]
+    {\normalsize June -- 2026}
+
+\end{titlepage}
+
+%% ---- DEDICATION (optional — comment out if not wanted) -----
+% \chapter*{Dedication}
+% \addcontentsline{toc}{chapter}{Dedication}
+% \begin{center}
+%     \textit{To all those who face physical limitations\\
+%     and seek technology as a bridge to independence.}
+% \end{center}
+% \newpage
+
+%% ---- ACKNOWLEDGEMENTS --------------------------------------
+\chapter*{Acknowledgements}
+\addcontentsline{toc}{chapter}{Acknowledgements}
+
+We would like to express our sincere gratitude to our supervisor,
+\textbf{Dr.\ Qadri Mayyala}, for his continuous guidance, constructive
+feedback, and unwavering support throughout every stage of this project.
+His expertise in signal processing and biomedical engineering was
+invaluable in shaping the direction, methodology, and overall quality
+of this work. His encouragement and availability whenever we faced
+technical challenges made a significant difference in our progress.
+
+We extend our deep appreciation to \textbf{Dr.\ Mohammad Rabhi} for
+his insightful contributions and technical discussions that helped us
+refine our signal processing and machine learning approaches. His
+thoughtful questions pushed us to think more rigorously about the
+validity of our evaluation methodology and the robustness of our
+system design.
+
+We are also grateful to \textbf{Dr.\ Wasel Ghanem} for his valuable
+feedback and support throughout the development of this project. His
+guidance on hardware integration and real-time system considerations
+was particularly helpful during the implementation and testing phases.
+
+We also thank the Faculty of Engineering \& Technology at Birzeit
+University for providing the laboratory facilities and resources
+necessary to conduct the experiments and data collection sessions
+described in this report. The support of the department in making
+equipment and workspace available was essential to the success of
+this project.
+
+Finally, we acknowledge the open-source communities behind
+\textit{Python}, \textit{MNE-Python}, \textit{scikit-learn},
+\textit{pyEDFlib}, and \textit{Arduino}, whose freely available tools
+and extensive documentation formed the backbone of our software and
+hardware implementation. This project would not have been possible
+without the collaborative spirit of the open-source engineering
+community.
+
+\newpage
+
+%% ---- ABSTRACT ----------------------------------------------
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Brain--Computer Interface (\acrshort{bci}) technology enables direct
+communication between the human user and external devices, bypassing
+damaged neuromuscular pathways. This project presents the design,
+implementation, and validation of a real-time \acrshort{eeg}-based
+\acrshort{bci} system for controlling a 3D-printed prosthetic hand
+using voluntary physiological artifact signals — specifically, eye
+blinks and jaw muscle activations (clinching and lateral bruxism).
+
+Unlike conventional motor imagery approaches that rely on subtle
+sensorimotor rhythm modulations, the proposed system exploits the
+large-amplitude, highly distinctive artifacts captured by a scalp
+\acrshort{eeg} montage: ocular potentials (\acrshort{eog}) from
+voluntary blinks at the frontal electrodes, and muscle potentials
+(\acrshort{emg}) from jaw activation at the temporal electrodes. A
+19-channel \acrshort{eeg} device recording at \SI{200}{\hertz} in
+European Data Format (\acrshort{edf}) captures five distinct voluntary
+commands: single blink (open hand), double blink (start/confirm), jaw
+clinch (close hand), left bruxism (rotate left), and right bruxism
+(rotate right).
+
+The processing pipeline encompasses notch and bandpass filtering,
+Common Average Reference (\acrshort{car}) spatial normalisation, and
+activity-gated epoch extraction. The central methodological
+contribution is a \textbf{three-way hybrid classification
+architecture} in which each gesture family is routed to the method
+best matched to its underlying physiology: hand-crafted channel-aware
+features perform the initial blink-versus-muscle separation, Dynamic
+Time Warping (\acrshort{dtw}) shape-matching sub-classifies the blink
+commands, and Riemannian covariance geometry sub-classifies the muscle
+commands. Evaluated under the strict, cross-session
+Leave-One-Session-Out (\acrshort{loso}) protocol --- which eliminates
+the epoch-overlap data leakage that inflates naive estimates --- the
+final system achieves \textbf{91.3\%} overall accuracy with a
+macro-averaged F1-score of \textbf{0.913}, improving on a flat
+Random Forest baseline (85.1\%) through the hierarchical routing,
+Riemannian muscle classification (+4.1\%), and \acrshort{dtw} blink
+classification (+2.1\%). Real-time inference employs a sliding window
+of \SI{2.0}{\second} with \SI{0.2}{\second} step, a confidence
+threshold of 0.60, and a Finite State Machine (\acrshort{fsm})
+requiring three consecutive identical predictions before issuing a
+command to the ESP32-controlled prosthetic hand, at a per-window
+latency of \SI{14}{\milli\second}.
+
+The system demonstrates that voluntary artifact-based control is a
+practical, robust, and accessible alternative to motor imagery for
+users with severe upper-limb amputations, offering clear,
+large-amplitude signals that are easier to classify reliably under
+real-world, cross-session conditions.
+
+\bigskip
+\noindent\textbf{Keywords:}
+Brain--Computer Interface,
+Electroencephalography,
+Voluntary Artifact Classification,
+Prosthetic Hand Control,
+Hybrid Architecture,
+Dynamic Time Warping,
+Riemannian Geometry,
+Activity Gating,
+Real-Time Inference,
+Finite State Machine,
+Jaw EMG,
+Eye Blink Detection.
+
+\newpage
+
+%% ---- TABLES OF CONTENTS / FIGURES / TABLES -----------------
+\tableofcontents
+\newpage
+
+\listoffigures
+\addcontentsline{toc}{chapter}{List of Figures}
+\newpage
+
+\listoftables
+\addcontentsline{toc}{chapter}{List of Tables}
+\newpage
+
+%% ---- ACRONYMS ----------------------------------------------
+\printglossary[type=\acronymtype, title=List of Abbreviations,
+               toctitle=List of Abbreviations]
+\newpage
+
+%% ============================================================
+%%  CHAPTERS
+%% ============================================================
+
+\input{ch1_introduction}        % Chapter 1  — Introduction
+\input{ch2_related_work}        % Chapter 2  — Related Work
+\input{ch3_medical}             % Chapter 3  — Medical & Physiological Foundations
+\input{ch4_system_hardware}     % Chapter 4  — System Overview & Hardware
+\input{ch5_methodology}         % Chapter 5  — Methodology Overview
+\input{ch6_data_collection}     % Chapter 6  — Data Collection
+\input{ch7_signal_processing}   % Chapter 7  — Signal Processing Pipeline
+\input{ch8_feature_extraction}  % Chapter 8  — Feature Extraction
+\input{ch9_classification}      % Chapter 9  — Classification & Training
+ \input{ch10_results}         % Chapter 10 — Results & Analysis
+ \input{ch11_application}     % Chapter 11 — Configuration & Control Application
+\input{ch12_inference}       % Chapter 12 — Real-Time Inference
+ \input{ch13_discussion}      % Chapter 13 — Discussion
+\input{ch14_conclusion}      % Chapter 14 — Conclusion
+
+%% ---- REFERENCES --------------------------------------------
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+\addcontentsline{toc}{chapter}{References}
+
+\end{document}

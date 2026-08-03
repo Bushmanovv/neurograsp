@@ -1,0 +1,453 @@
+%% ============================================================
+%%  CHAPTER 12 — REAL-TIME INFERENCE
+%% ============================================================
+\chapter{Real-Time Inference}
+\label{ch:inference}
+
+This chapter describes how the offline-trained \acrshort{dtw}
+hybrid model (Chapter~9) is deployed as a continuously running,
+real-time classifier on the Raspberry Pi~5 (Chapter~4), turning a
+live \acrshort{eeg} stream into discrete prosthetic hand commands
+sent over \acrshort{uart} to the ESP32 (Chapter~11). Every
+component in this chapter reuses the exact model, features, and
+preprocessing fitted offline in Chapters~7--9; nothing is retrained
+or re-derived for deployment. Section~\ref{sec:inf_overview}
+presents the end-to-end real-time pipeline. Section~\ref{sec:inf_window}
+describes the sliding window acquisition strategy and how it
+differs from offline epoching. Section~\ref{sec:inf_gate}
+describes the real-time activity gate and how it differs from the
+recording-relative gate used offline (Chapter~7).
+Section~\ref{sec:inf_classify} describes per-window classification.
+Section~\ref{sec:inf_confidence} describes confidence thresholding.
+Section~\ref{sec:inf_fsm} describes the Finite State Machine that
+confirms a command before it is acted on.
+Section~\ref{sec:inf_latency} presents the latency budget.
+Section~\ref{sec:inf_uart} describes the \acrshort{uart} output
+protocol (Contract~A, Chapter~11) and corrects an outdated
+description found in earlier project notes.
+Section~\ref{sec:inf_compare} summarises every offline/real-time
+pipeline difference in one place. Section~\ref{sec:inf_summary}
+summarises the chapter.
+
+%% ----------------------------------------------------------
+\section{Real-Time Pipeline Overview}
+\label{sec:inf_overview}
+%% ----------------------------------------------------------
+
+Figure~\ref{fig:realtime_pipeline} shows the complete real-time
+pipeline, from the continuous \acrshort{eeg} stream to the
+\acrshort{uart} line sent to the ESP32. The pipeline runs
+continuously on the Raspberry Pi~5, re-evaluating a new window
+every 0.2\,s, independently of whether the previous window produced
+a command.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.5cm,
+    box/.style={rectangle, rounded corners=3pt, draw=black,
+                fill=blue!10, minimum width=6.2cm,
+                minimum height=0.75cm, align=center, font=\small},
+    decision/.style={diamond, draw=black, fill=yellow!20,
+                     minimum width=3.4cm, minimum height=0.9cm,
+                     align=center, font=\small},
+    arrow/.style={-{Stealth[length=5pt]}, thick},
+    note/.style={font=\scriptsize\itshape, text=gray, align=left}
+]
+
+\node[box, fill=green!15] (stream) {Continuous EEG Stream (19\,ch, 200\,Hz)};
+\node[box, below=of stream] (window) {Sliding Window (2.0\,s, step 0.2\,s)};
+\node[decision, below=of window] (gate) {Activity $\geq$ 20\,\si{\micro\volt}?};
+\node[box, right=2cm of gate, fill=red!15] (skip) {No command\\(hand holds position)};
+\node[box, below=of gate] (route) {Stage 1: blink vs.\ muscle};
+\node[box, below=of route] (predict) {Stage 2a (DTW) or Stage 2b (Riemannian)};
+\node[decision, below=of predict] (conf) {Confidence $\geq$ 0.60?};
+\node[box, below=of conf] (fsm) {FSM: 3 consecutive identical predictions};
+\node[box, below=of fsm, fill=orange!20] (uart)
+    {UART line to ESP32 (Contract A, Chapter~11)};
+
+\draw[arrow] (stream)  -- (window);
+\draw[arrow] (window)  -- (gate);
+\draw[arrow] (gate)    -- node[right,font=\scriptsize]{Yes} (route);
+\draw[arrow] (gate)    -- node[above,font=\scriptsize]{No}  (skip);
+\draw[arrow] (route)   -- (predict);
+\draw[arrow] (predict) -- (conf);
+\draw[arrow] (conf)    -- node[right,font=\scriptsize]{Yes} (fsm);
+\draw[arrow] (conf)    -| node[near start, above,
+    font=\scriptsize]{No} (skip);
+\draw[arrow] (fsm)     -- (uart);
+
+\node[note, right=0.3cm of window] {inference.py: 400-sample buffer, 40-sample step};
+\node[note, right=0.3cm of gate]   {Fixed threshold (Section~\ref{sec:inf_gate})};
+\node[note, right=0.3cm of predict] {Chapter~9 model, unchanged};
+\node[note, right=0.3cm of fsm]     {Section~\ref{sec:inf_fsm}};
+
+\end{tikzpicture}
+\caption{The real-time inference pipeline. A new window is
+evaluated every 0.2\,s; a window that fails the activity gate or
+the confidence threshold, or does not yet complete an FSM run of 3
+consecutive identical predictions, produces no UART output and the
+hand simply holds its current position (Chapter~11's fail-safe
+behaviour handles the case where no command arrives for an extended
+period).}
+\label{fig:realtime_pipeline}
+\end{figure}
+
+The design principle underlying every stage in this pipeline is the
+same one established in Chapter~9: \textbf{nothing about the model
+changes between offline evaluation and real-time deployment.} The
+same 129-feature superset (Chapter~8), the same Stage~1 router, the
+same \acrshort{dtw}-KNN blink classifier, and the same Riemannian
+muscle classifier (all Chapter~9) are loaded from
+\code{dtw\_hybrid\_model.pkl} and applied unmodified. Everything
+described in this chapter is deployment \emph{machinery} around
+that fixed model --- window buffering, gating, confidence
+thresholding, and command confirmation --- not a re-implementation
+of the model itself.
+
+%% ----------------------------------------------------------
+\section{Sliding Window Acquisition}
+\label{sec:inf_window}
+%% ----------------------------------------------------------
+
+The real-time pipeline maintains a rolling buffer of the most
+recent 2.0\,s of \acrshort{eeg} samples (400 samples at
+\SI{200}{\hertz}, exactly matching the offline epoch length,
+Chapter~7) and re-evaluates a classification every \textbf{0.2\,s}
+(a 40-sample step), i.e.\ five predictions per second.
+
+\subsection{Why the Real-Time Step Differs from the Offline Step}
+
+Offline, epochs are extracted with a 0.5\,s step (75\% overlap,
+Chapter~7) --- a choice driven by wanting many diverse, overlapping
+training examples per recording, with the resulting overlap-leakage
+risk handled at the evaluation-protocol level (Chapter~9) rather
+than by reducing the step. In real-time deployment, the same
+consideration does not apply --- there is no train/test split to
+leak across, since inference makes a fresh prediction on live data
+it was never trained on. The real-time step is instead chosen
+purely to balance responsiveness against redundant computation: a
+0.2\,s step gives five prediction opportunities per second, which
+comfortably supports the \acrshort{fsm}'s 3-consecutive-prediction
+confirmation requirement (Section~\ref{sec:inf_fsm}) reaching a
+decision within roughly 0.6--1.0\,s of a gesture's onset, without
+re-computing a full window more often than the underlying 14\,ms
+per-window latency (Section~\ref{sec:inf_latency}) would comfortably
+support at a much finer step.
+
+%% ----------------------------------------------------------
+\section{Real-Time Activity Gate}
+\label{sec:inf_gate}
+%% ----------------------------------------------------------
+
+\subsection{A Different Gate From Training}
+
+Chapter~7 established that the \emph{offline} activity gate used to
+build the training dataset is \textbf{recording-relative}:
+\code{gate\_mask(frac=0.5)} thresholds each epoch against 50\% of
+that specific recording's own 90th-percentile activity level. This
+works offline because the entire recording is available in advance
+to compute a percentile from. It does \textbf{not} work in real
+time: a streaming pipeline has no access to ``the rest of the
+recording'' to compute a percentile over, since the recording is
+still ongoing and, in normal operation, has no fixed end at all.
+
+The real-time pipeline therefore uses a second, independently
+calibrated gate: a \textbf{fixed} \acrshort{rms} threshold of
+20\,\si{\micro\volt} at Fp1/Fp2 and T3/T4 (the same channel pairing
+used by the offline gate's activity measure, Equation~7.6),
+calibrated empirically against the same rest/active amplitude
+distributions documented in Chapter~7:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Rest windows:} typically
+    7--13\,\si{\micro\volt} RMS (background \acrshort{eeg}).
+    \item \textbf{Active gesture windows:} typically
+    30--200\,\si{\micro\volt} RMS.
+\end{itemize}
+
+A fixed threshold of 20\,\si{\micro\volt} sits comfortably in the
+gap between these two distributions. Unlike the offline gate, this
+threshold cannot adapt to a specific recording's own scale, so it
+depends on electrode impedance and amplifier gain being
+reasonably consistent with the conditions under which it was
+calibrated --- a limitation carried forward to Chapter~14 as a
+future-work item (re-calibrating this threshold per session, or
+replacing it with a short rolling-window percentile that
+approximates the offline gate's adaptivity without requiring the
+full recording in advance).
+
+\subsection{Why Two Gates, Not One}
+
+It is tempting to ask why the same recording-relative gate is not
+simply used in both places. The reason is architectural, not a
+missed simplification: the recording-relative gate's entire value
+proposition is that it adapts to a specific recording's own
+amplitude scale, which requires that recording's full activity
+distribution to already be known. That precondition is true for a
+completed training recording and false for a live stream. The two
+gates therefore serve the same conceptual purpose (reject epochs
+that are almost certainly rest, not gesture) through two different,
+context-appropriate mechanisms, and should not be confused with one
+another --- a point made explicitly in Chapters~7 and~10 and
+restated here in full for the real-time context.
+
+%% ----------------------------------------------------------
+\section{Per-Window Classification}
+\label{sec:inf_classify}
+%% ----------------------------------------------------------
+
+A window that passes the activity gate is classified using exactly
+the production pipeline described in Chapter~9:
+
+\begin{enumerate}[leftmargin=*]
+    \item The 129-feature superset (Chapter~8) is extracted from the
+    window.
+    \item Stage~1 routes the window to either the blink branch or
+    the muscle branch based on frontal and temporal features.
+    \item If routed to blink, the window's z-scored frontal
+    waveform is classified by the \acrshort{dtw}-KNN sub-classifier
+    (Chapter~9, Section~9.6) into \code{single\_blink} or
+    \code{double\_blink}.
+    \item If routed to muscle, the window's raw covariance is
+    projected into Riemannian tangent space and classified
+    (Chapter~9, Section~9.5) into \code{clinch},
+    \code{bruxism\_left}, or \code{bruxism\_right}.
+\end{enumerate}
+
+Each sub-classifier returns both a predicted class and a confidence
+score (class probability for the Riemannian branch's \acrshort{svc};
+neighbour-vote agreement fraction for the \acrshort{dtw}-KNN
+branch), which feeds directly into the confidence gate
+(Section~\ref{sec:inf_confidence}).
+
+%% ----------------------------------------------------------
+\section{Confidence Thresholding}
+\label{sec:inf_confidence}
+%% ----------------------------------------------------------
+
+A prediction is discarded --- treated identically to a window that
+failed the activity gate --- unless its confidence score meets or
+exceeds \textbf{0.60}. This threshold exists to suppress low-margin
+predictions near a decision boundary from ever reaching the
+\acrshort{fsm} (Section~\ref{sec:inf_fsm}) at all: a window the
+model is genuinely unsure about is more useful to the system as ``no
+command'' than as a low-confidence guess that might spuriously
+begin accumulating toward an incorrect \acrshort{fsm} confirmation.
+Combined with the \acrshort{fsm}'s 3-consecutive-prediction
+requirement, this makes the system doubly conservative about acting
+on a single ambiguous window --- consistent with the fail-closed
+design philosophy already established for Contract~A
+(Chapter~11): a missed or delayed command is a minor usability
+issue, while an incorrectly executed one, on a prosthetic hand near
+the user's face and body, is a safety concern.
+
+%% ----------------------------------------------------------
+\section{Finite State Machine Confirmation}
+\label{sec:inf_fsm}
+%% ----------------------------------------------------------
+
+\subsection{Motivation}
+
+Any single window's prediction, however confident, is a noisy
+estimate: a brief muscle twitch, an eye movement unrelated to a
+deliberate blink, or an artefact near a class boundary can produce
+an isolated, spurious high-confidence prediction. Rather than
+acting on every qualifying window individually, the system requires
+a short run of \textbf{agreement} across consecutive predictions
+before treating a class as a confirmed command.
+
+\subsection{Design}
+
+The \acrshort{fsm} maintains a simple run-length counter over
+predictions that have already passed the activity gate and the
+confidence threshold: it tracks the current candidate class and how
+many consecutive qualifying windows have agreed with it. A command
+is confirmed, and transmitted over \acrshort{uart}
+(Section~\ref{sec:inf_uart}), only once \textbf{3 consecutive}
+qualifying windows have produced the \emph{same} predicted class.
+Figure~\ref{fig:fsm} illustrates the state machine.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=1.6cm,
+    state/.style={circle, draw=black, fill=blue!10,
+                  minimum size=1.6cm, align=center, font=\small},
+    final/.style={circle, draw=black, fill=green!20, thick,
+                  minimum size=1.6cm, align=center, font=\small},
+    arrow/.style={-{Stealth[length=5pt]}, thick}
+]
+\node[state] (s0) {0 matches\\(idle)};
+\node[state, right=2.4cm of s0] (s1) {1 match};
+\node[state, right=2.4cm of s1] (s2) {2 matches};
+\node[final, right=2.4cm of s2] (s3) {Confirmed\\emit UART};
+
+\draw[arrow] (s0) to[bend left=25] node[above,
+    font=\scriptsize]{qualifying pred.} (s1);
+\draw[arrow] (s1) to[bend left=25] node[above,
+    font=\scriptsize]{same class} (s2);
+\draw[arrow] (s2) to[bend left=25] node[above,
+    font=\scriptsize]{same class} (s3);
+\draw[arrow] (s1) to[out=225,in=315] node[below,
+    font=\scriptsize]{different class} (s0);
+\draw[arrow] (s2) to[out=225,in=315] node[below,
+    font=\scriptsize]{different class / restart at 1} (s0);
+\draw[arrow] (s3) to[out=135,in=45,looseness=2.5]
+    node[above, font=\scriptsize]{reset} (s0);
+\end{tikzpicture}
+\caption{The 3-consecutive-prediction confirmation FSM. Any
+disagreement resets the run; a window that fails the activity gate
+or confidence threshold (Sections~\ref{sec:inf_gate}--\ref{sec:inf_confidence})
+does not advance or reset the counter, since it is treated as ``no
+information'' rather than ``a competing class.''}
+\label{fig:fsm}
+\end{figure}
+
+A window that fails the activity gate or the confidence threshold
+is treated as a non-event rather than a competing prediction: it
+neither advances the run-length counter nor resets it, so a brief
+rest period between two windows supporting the same gesture does
+not force the count back to zero. Only a \emph{qualifying}
+prediction of a \emph{different} class resets the counter.
+
+%% ----------------------------------------------------------
+\section{Latency Budget}
+\label{sec:inf_latency}
+%% ----------------------------------------------------------
+
+Measured end-to-end, per-window inference (feature extraction
+through classification, for whichever branch a window is routed to)
+takes \textbf{14\,ms}, dominated by the \acrshort{dtw} distance
+computation in Stage~2a --- the most expensive single operation in
+the pipeline, since it involves a Sakoe--Chiba-constrained dynamic
+programming pass against every stored training exemplar
+(Chapter~9). This is well under the 200\,ms window step
+(Section~\ref{sec:inf_window}): at 14\,ms of compute per 200\,ms of
+wall-clock step, the pipeline uses roughly 7\% of its available time
+budget per window, leaving very substantial headroom before the
+real-time constraint (finishing one window's classification before
+the next window is due) becomes a concern. This margin is also what
+makes the \acrshort{fsm}'s 3-consecutive-window confirmation
+practical without perceptible added lag: at five predictions per
+second, three consecutive agreeing predictions are available within
+roughly 0.6\,s of a gesture's onset in the best case, well inside
+what a user would perceive as a responsive control loop.
+
+%% ----------------------------------------------------------
+\section{UART Output (Contract A)}
+\label{sec:inf_uart}
+%% ----------------------------------------------------------
+
+\subsection{Correcting an Outdated Description}
+
+Earlier working notes describing this pipeline stage referred to
+the classifier's output as going to ``Arduino serial'' --- a
+description carried over from an earlier hardware iteration of the
+project, before the current 3-node distributed architecture
+(Chapter~4) was adopted. \textbf{This is out of date and is
+corrected here explicitly:} the deployment target is not an
+Arduino, and the link is not a generic serial print. The confirmed
+command is transmitted as a single \code{lowercase\_snake\_case}
+label, newline-terminated, over the Raspberry Pi~5's UART pins to
+the ESP32's \code{Serial2} input at 115200 baud --- precisely
+\textbf{Contract~A}, specified in full in Chapter~11. This chapter
+and Chapter~11 describe the two ends of the same physical link: this
+chapter produces the label; Chapter~11 describes how the ESP32
+consumes it, looks it up in the user-editable mapping table, and
+drives the servos.
+
+\subsection{Label Emission}
+
+On \acrshort{fsm} confirmation, the pipeline emits exactly the
+class name the model predicted --- \code{single\_blink},
+\code{double\_blink}, \code{clinch}, \code{bruxism\_left}, or
+\code{bruxism\_right} --- as the UART line. As documented in
+Chapter~11 (Section~11.4.2), the currently shipped ESP32 firmware
+configuration does not yet recognise these exact label strings
+(it ships with an older seven-label placeholder set); the
+reconciled mapping table given there is what this pipeline's output
+is designed against; that reconciliation is a firmware-side
+configuration fix, not a change required in the inference pipeline
+described in this chapter.
+
+\subsection{Command Line Interface}
+
+The production inference script, \code{inference.py}, accepts a
+\code{--model} flag selecting which trained architecture to run
+live: \code{dtw} (the final production model described throughout
+this chapter), \code{hybrid} (Riemannian muscle branch only, hand-crafted
+blink features, Chapter~9), \code{hierarchical}, or \code{flat}. This
+was primarily a development and A/B-testing convenience during the
+architecture progression documented in Chapter~9, allowing each
+intermediate architecture to be exercised live on the actual hand
+before its offline evaluation numbers were finalised; \code{dtw} is
+the flag used for all deployed operation.
+
+%% ----------------------------------------------------------
+\section{Offline vs.\ Real-Time: A Consolidated Comparison}
+\label{sec:inf_compare}
+%% ----------------------------------------------------------
+
+Table~\ref{tab:offline_vs_realtime} consolidates every point in this
+report where the offline (training/evaluation) pipeline and the
+real-time (deployment) pipeline intentionally differ, since the two
+are easy to conflate and have been addressed piecemeal across
+several chapters.
+
+\begin{table}[htbp]
+\centering
+\caption{Every intentional difference between the offline and
+real-time pipelines. Everything not listed here (feature
+extraction, the trained model itself, channel configuration) is
+identical between the two.}
+\label{tab:offline_vs_realtime}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{p{2.8cm} p{4.9cm} p{4.9cm}}
+\toprule
+\textbf{Aspect} & \textbf{Offline (training/eval)} &
+\textbf{Real-time (deployment)} \\
+\midrule
+Window step & 0.5\,s (75\% overlap; Chapter~7) & 0.2\,s (5
+    predictions/s; Section~\ref{sec:inf_window}) \\
+Activity gate & Recording-relative,
+    \code{gate\_mask(frac=0.5)}, 90th-percentile-based
+    (Chapter~7) & Fixed 20\,\si{\micro\volt} \acrshort{rms}
+    threshold (Section~\ref{sec:inf_gate}) \\
+Evaluation unit & Independent epoch, scored against ground truth
+    (Chapter~9) & Continuous stream, no ground truth, confirmed
+    via \acrshort{fsm} (Section~\ref{sec:inf_fsm}) \\
+Output & Predicted label + true label, for metric computation
+    (Chapter~10) & Confirmed label only, transmitted over
+    \acrshort{uart} (Section~\ref{sec:inf_uart}) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+%% ----------------------------------------------------------
+\section{Chapter Summary}
+\label{sec:inf_summary}
+%% ----------------------------------------------------------
+
+This chapter described the deployment of the offline-trained
+\acrshort{dtw} hybrid model (Chapter~9) as a real-time classifier.
+A rolling 2.0\,s window, re-evaluated every 0.2\,s, is passed
+through a \textbf{fixed} 20\,\si{\micro\volt} activity gate ---
+distinct from, and for good reason not identical to, the
+recording-relative gate used to build the training dataset
+(Chapter~7) --- before being classified by the unmodified Chapter~9
+model and gated a second time by a 0.60 confidence threshold. A
+3-consecutive-prediction Finite State Machine suppresses isolated,
+noisy predictions before any command is confirmed. Measured
+per-window latency (14\,ms, dominated by the \acrshort{dtw}
+distance computation) leaves substantial headroom under the 200\,ms
+step, so the pipeline comfortably meets real-time throughput
+requirements. Confirmed commands are transmitted as
+\code{lowercase\_snake\_case} class labels over \acrshort{uart} to
+the ESP32 via Contract~A (Chapter~11) --- explicitly correcting an
+outdated ``Arduino serial'' description carried over from an
+earlier hardware iteration of the project (Chapter~4). A
+consolidated table cross-referenced every intentional offline/real-time
+difference discussed across this and earlier chapters. The
+following chapter discusses the project's results, limitations, and
+broader implications.

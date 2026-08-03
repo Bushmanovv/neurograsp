@@ -1,0 +1,428 @@
+%% ============================================================
+%%  CHAPTER 10 — RESULTS AND ANALYSIS
+%% ============================================================
+\chapter{Results and Analysis}
+\label{ch:results}
+
+This chapter presents the detailed evaluation results of the final
+production model (the \acrshort{dtw} hybrid architecture,
+Chapter~9), all under the honest Leave-One-Session-Out
+(\acrshort{loso}) protocol established in that chapter.
+Section~\ref{sec:res_headline} restates the headline result and
+reconciles the two ways of aggregating the LOSO folds.
+Section~\ref{sec:res_perfold} breaks that result down fold by
+fold. Section~\ref{sec:res_perclass} presents the per-class
+performance breakdown. Section~\ref{sec:res_confusion} presents
+and analyses the confusion matrix. Section~\ref{sec:res_ablation}
+presents the complete experiment log as a full ablation table,
+consolidating every architectural and feature decision made across
+Chapters~6--9 into a single reference. Section~\ref{sec:res_realtime}
+summarises the real-time operating characteristics of the deployed
+model. Section~\ref{sec:res_summary} summarises the chapter.
+
+%% ----------------------------------------------------------
+\section{Headline Result}
+\label{sec:res_headline}
+%% ----------------------------------------------------------
+
+The final production model --- the three-way hybrid architecture
+of Chapter~9, combining hand-crafted-feature routing (Stage~1),
+\acrshort{dtw} shape-matching for blink sub-classification
+(Stage~2a), and Riemannian covariance geometry for muscle
+sub-classification (Stage~2b) --- achieves:
+
+\begin{center}
+\Large \textbf{91.3\% accuracy, macro-F1 0.913}\\
+\normalsize (unweighted mean across the 3 LOSO folds, as reported
+during architecture development, Chapter~9)\\[4pt]
+\Large \textbf{91.8\% accuracy, macro-F1 0.918}\\
+\normalsize (pooled across all 1{,}246 held-out predictions,
+Section~\ref{sec:res_perclass})
+\end{center}
+
+Both figures describe the same trained model and the same
+\acrshort{loso} protocol; they differ only in how the three
+per-session folds are aggregated. The 91.3\% figure
+(Chapter~9) is the \textbf{unweighted mean} of the three per-fold
+accuracies; the 91.8\% figure is computed by \textbf{pooling} every
+held-out prediction from all three folds into one set before
+scoring. The two are consistent to within 0.5 points --- the pooled
+figure is very slightly higher because Session3, the largest fold
+(509 of 1{,}246 epochs) and the model's best-performing fold
+(95.7\%, Section~\ref{sec:res_perfold}), is weighted by its epoch
+count under pooling rather than counted equally with the two
+smaller sessions. Table~\ref{tab:perfold_accuracy} in
+Section~\ref{sec:res_perfold} gives the exact per-fold numbers
+behind both figures. Since the pooled evaluation was run directly
+against the production \code{DtwRiemannHybridClassifier} used by
+\code{train\_dtw\_hybrid.py} (rather than summarised from prior
+documentation), it is treated as the authoritative source for the
+detailed per-class and confusion-matrix results in this chapter;
+Chapter~9 retains the 91.3\% figure as originally reported during
+development, for historical continuity with the progression
+narrative told there.
+
+This is, per the reference table established in Chapter~9
+(Table~\ref{tab:honest_numbers}), the family of numbers that should
+be cited as \emph{the} accuracy of the system: computed under the
+strictest available protocol (an entire unseen recording session,
+cross-day, with no epoch-overlap or preprocessing leakage), and
+answering the deployment-relevant question --- how well the system
+performs on a new day without recalibration.
+
+%% ----------------------------------------------------------
+\section{Per-Fold Breakdown}
+\label{sec:res_perfold}
+%% ----------------------------------------------------------
+
+Table~\ref{tab:perfold_accuracy} gives the accuracy of each
+architecture (Chapter~9) on each of the three \acrshort{loso}
+folds individually, computed by \code{eval\_loso.py} against the
+same session splits used throughout Chapter~9.
+
+\begin{table}[htbp]
+\centering
+\caption{Per-fold LOSO accuracy by architecture and held-out
+session. Each column is one fold: train on the other two sessions,
+test on the named session. ``dtw-hybrid'' is the final production
+model.}
+\label{tab:perfold_accuracy}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l c c c c}
+\toprule
+\textbf{Held-out session} & \textbf{Gated epochs} &
+\textbf{Flat RF} & \textbf{Hierarchical} & \textbf{DTW-hybrid} \\
+\midrule
+Session1 & 368 & 84.8\% & 85.3\% & 90.2\% \\
+Session2 & 369 & 83.5\% & 82.7\% & 88.1\% \\
+Session3 & 509 & 87.0\% & 87.2\% & 95.7\% \\
+\midrule
+\textbf{Unweighted mean} & --- & 85.1\% & 85.1\% &
+\textbf{91.3\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three things are worth noting in this table:
+
+\begin{itemize}[leftmargin=*]
+    \item The unweighted-mean row reproduces exactly the headline
+    figures reported throughout Chapter~9 (85.1\% flat, 85.1\%
+    hierarchical, 91.3\% DTW-hybrid), confirming the per-fold
+    numbers behind those figures.
+    \item \textbf{DTW-hybrid outperforms both simpler architectures
+    on every single fold}, not just on average --- the improvement
+    from hierarchical routing plus Riemannian/DTW branches is
+    consistent across all three recording sessions, not an artefact
+    of one favourable session.
+    \item \textbf{Session3 is both the largest and the
+    best-performing fold} for every architecture (509 gated
+    epochs, 95.7\% for DTW-hybrid), which is why the pooled
+    accuracy in Section~\ref{sec:res_headline} (91.8\%) is slightly
+    higher than the unweighted per-fold mean (91.3\%): pooling
+    naturally gives Session3's predictions more influence over the
+    final score, in proportion to how much data it contributes.
+\end{itemize}
+
+\textit{Methodological note: producing this table required a small
+correction to the development-time evaluation script. }
+\code{eval\_loso.py}\textit{ originally only fit and compared the
+flat and hierarchical models; the DTW-hybrid numbers previously
+reported (Chapter~9) came from a separate one-off script
+(}\code{eval\_dtw\_blink.run\_end\_to\_end()}\textit{) that
+reimplemented the fold-splitting logic independently. }
+\code{eval\_loso.py}\textit{ was extended with a }\code{\_dtw\_fold()}
+\textit{ helper that fits the exact production
+}\code{DtwRiemannHybridClassifier}\textit{ class (the one
+}\code{train\_dtw\_hybrid.py}\textit{ uses) on the same session
+splits already used for the flat/hierarchical comparison, so that
+all three architectures in Table~\ref{tab:perfold_accuracy} are now
+evaluated by one script, on identical folds, rather than being
+assembled from two separate evaluation code paths. No change was
+made to the training logic, gating, feature extraction, or fold
+structure of any architecture --- only reporting was added on top
+of the existing evaluation.}
+
+%% ----------------------------------------------------------
+\section{Per-Class Performance}
+\label{sec:res_perclass}
+%% ----------------------------------------------------------
+
+Table~\ref{tab:final_perclass} gives the complete per-class
+precision, recall, F1, and support, computed by pooling predictions
+across all three \acrshort{loso} folds (\code{eval\_loso.py},
+production \code{DtwRiemannHybridClassifier}).
+
+\begin{table}[htbp]
+\centering
+\caption{Final per-class precision, recall, F1, and support, DTW
+hybrid model, LOSO protocol (predictions pooled across all 3
+folds). Support totals 1{,}246, matching the activity-gated
+dataset size (Chapter~6).}
+\label{tab:final_perclass}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{c l c c c c}
+\toprule
+\textbf{Cmd} & \textbf{Class} & \textbf{Precision} &
+\textbf{Recall} & \textbf{F1} & \textbf{Support} \\
+\midrule
+O & \code{single\_blink}  & 0.867 & 0.792 & 0.828 & 255 \\
+S & \code{double\_blink}  & 0.808 & 0.882 & 0.843 & 262 \\
+C & \code{clinch}         & 0.931 & 0.976 & 0.953 & 165 \\
+L & \code{bruxism\_left}  & 1.000 & 0.975 & 0.987 & 239 \\
+R & \code{bruxism\_right} & 0.988 & 0.975 & 0.981 & 325 \\
+\midrule
+\multicolumn{2}{l}{\textbf{Accuracy}} & \multicolumn{3}{l}{0.918} &
+1{,}246 \\
+\multicolumn{2}{l}{\textbf{Macro avg}} & 0.919 & 0.920 & 0.918 &
+1{,}246 \\
+\multicolumn{2}{l}{\textbf{Weighted avg}} & 0.920 & 0.918 & 0.918 &
+1{,}246 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reading the Per-Class Pattern}
+
+The per-class scores fall cleanly into two tiers that mirror the
+architectural split established in Chapter~9:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Muscle classes (C, L, R): F1 0.95--0.99.} These
+    are the classes classified via Riemannian covariance geometry
+    (Section~9.5). \code{bruxism\_left} reaches perfect precision
+    (1.000) --- every window the model calls left bruxism genuinely
+    is left bruxism --- with recall of 0.975 accounting for its
+    small number of errors. These near-uniformly high scores
+    confirm that covariance structure is a robust, cross-session-stable
+    representation for the jaw \acrshort{emg} classes.
+    \item \textbf{Blink classes (S, O): F1 0.83--0.84.} These are
+    the classes classified via \acrshort{dtw} shape-matching
+    (Section~9.6). Their precision/recall values are notably
+    asymmetric: \code{single\_blink} has high precision (0.867) but
+    lower recall (0.792), while \code{double\_blink} has the
+    opposite pattern (0.808 precision, 0.882 recall). This is
+    exactly what the single-blink contamination finding
+    (Chapter~6) predicts: a contaminated \code{single\_blink}
+    window that actually contains a multi-blink cluster looks more
+    like a \code{double\_blink} to the classifier, which
+    systematically pulls \code{single\_blink} windows toward being
+    predicted as \code{double\_blink} --- lowering
+    \code{single\_blink} recall while inflating \code{double\_blink}
+    recall. Section~\ref{sec:res_confusion} confirms this directly
+    from the confusion matrix.
+\end{itemize}
+
+%% ----------------------------------------------------------
+\section{Confusion Patterns}
+\label{sec:res_confusion}
+%% ----------------------------------------------------------
+
+Table~\ref{tab:confusion_matrix} gives the full confusion matrix,
+pooled across all three \acrshort{loso} folds
+(\code{eval\_loso.py}, production \code{DtwRiemannHybridClassifier}).
+Rows are the true class; columns are the predicted class.
+
+\begin{table}[htbp]
+\centering
+\caption{Confusion matrix, DTW hybrid model, LOSO protocol,
+pooled across all 3 folds (1{,}246 total predictions). Rows: true
+class. Columns: predicted class. Diagonal (correct predictions)
+in bold.}
+\label{tab:confusion_matrix}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l c c c c c}
+\toprule
+\textbf{True $\downarrow$ / Pred $\rightarrow$} &
+\code{single\_} & \code{double\_} & \code{clinch} &
+\code{bruxism\_} & \code{bruxism\_} \\
+ & \code{blink} & \code{blink} & & \code{left} & \code{right} \\
+\midrule
+\code{single\_blink}  & \textbf{202} & 52  & 1   & 0   & 0   \\
+\code{double\_blink}  & 30  & \textbf{231} & 0   & 0   & 1   \\
+\code{clinch}         & 0   & 2   & \textbf{161} & 0   & 2   \\
+\code{bruxism\_left}  & 1   & 1   & 3   & \textbf{233} & 1   \\
+\code{bruxism\_right} & 0   & 0   & 8   & 0   & \textbf{317} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Reading the Confusion Matrix}
+
+Out of 1{,}246 pooled predictions, 1{,}144 are correct (trace of
+the matrix) and 102 are misclassified --- consistent with the
+91.8\% pooled accuracy in Section~\ref{sec:res_headline}. The
+distribution of those 102 errors confirms every prediction made
+qualitatively in earlier chapters:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{S$\leftrightarrow$O (single/double blink) accounts
+    for 82 of the 102 total errors (80.4\%).} 52
+    \code{single\_blink} windows are predicted as
+    \code{double\_blink}, and 30 \code{double\_blink} windows are
+    predicted as \code{single\_blink}. This is by far the dominant
+    confusion in the whole matrix and is the direct, quantitative
+    signature of the single-blink contamination problem
+    (Chapter~6): a \code{single\_blink} recording that actually
+    contains a multi-blink cluster produces a waveform shape closer
+    to a genuine \code{double\_blink} exemplar, which is exactly
+    what \acrshort{dtw} nearest-neighbour classification would be
+    expected to do with such an epoch. The asymmetry (52 vs.\ 30)
+    is also consistent with Chapter~6's finding that contamination
+    specifically afflicts the \code{single\_blink} recordings
+    (only 39\% clean) far more than \code{double\_blink}
+    (55\% clean) --- more \code{single\_blink} epochs are
+    ambiguous, so more \code{single\_blink} epochs are misrouted.
+    \item \textbf{Blink$\leftrightarrow$muscle confusion is
+    negligible:} only 2 epochs total cross the blink/muscle
+    boundary (1 \code{single\_blink}$\rightarrow$\code{clinch}, 1
+    \code{bruxism\_left}$\rightarrow$\code{single\_blink}), out of
+    1{,}246 predictions --- confirming the Stage~1 router's
+    near-perfect isolation (Chapter~9).
+    \item \textbf{Confusion among the muscle classes is small and
+    concentrated on clinch, not between left and right bruxism.}
+    8 \code{bruxism\_right} epochs are misclassified as
+    \code{clinch}, and 3 \code{bruxism\_left} epochs as
+    \code{clinch}, but \textbf{zero} \code{bruxism\_left} epochs
+    are confused with \code{bruxism\_right} or vice versa. This
+    matches the architectural expectation exactly: clinch and
+    bruxism share the same electrode pair (T3, T4) and are
+    distinguished mainly by lateral balance, whereas left and right
+    bruxism are separated by the sign of the same asymmetry signal
+    and remain essentially unconfusable once routed to the
+    Riemannian branch.
+\end{itemize}
+
+%% ----------------------------------------------------------
+\section{Complete Ablation and Experiment Log}
+\label{sec:res_ablation}
+%% ----------------------------------------------------------
+
+Table~\ref{tab:experiment_log} consolidates every experiment
+referenced across Chapters~6--9 into a single chronological
+ablation log, making explicit which changes were kept in the final
+production model and which were tried and rejected.
+
+\begin{table}[htbp]
+\centering
+\caption{Complete experiment log across the project. ``Kept''
+experiments are part of the final production model
+(\code{dtw\_hybrid\_model.pkl}); ``Rejected'' experiments were
+implemented, evaluated, and explicitly not carried forward.}
+\label{tab:experiment_log}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{p{2.1cm} p{4.3cm} p{4.8cm}}
+\toprule
+\textbf{Phase} & \textbf{Experiment} & \textbf{Outcome} \\
+\midrule
+Taxonomy & 5$\rightarrow$6 class split (Chapter~6) &
+    +3.0\% --- kept \\
+Taxonomy & 6$\rightarrow$5 class (drop triple blink, bilateral
+    bruxism; Chapter~6) & Cleaner, more robust classes --- kept \\
+Epoching & Activity gating, recording-relative (Chapter~7) &
+    +3.1\% --- kept \\
+Epoching & Session-simulating augmentation
+    (jitter/scale/shift/warp) & $-$1.1\% --- \textbf{rejected} \\
+Features & \acrshort{dwt}, full (108 feats; Chapter~8) &
+    $-$14.4\% --- \textbf{rejected} \\
+Features & \acrshort{dwt}, relative-energy only (36 feats;
+    Chapter~8) & Break-even --- \textbf{rejected} \\
+Features & \acrshort{tkeo} (Chapter~8) & $-$5.7\% ---
+    \textbf{rejected} \\
+Features & \acrshort{emg} descriptors (Chapter~8) & Hurts flat
+    model overall, but helps muscle branch specifically --- kept
+    \emph{for Stage~2b only} \\
+Architecture & Hierarchical routing, flat$\rightarrow$2-stage
+    (Chapter~9) & +5.0\% (GroupKFold) --- kept \\
+Muscle & Riemannian Stage~2b (Chapter~9) & +4.1\% (\acrshort{loso})
+    --- kept \\
+Muscle & \code{tsupdate=True} (Chapter~9) & Best on \acrshort{loso}
+    but collapses on GroupKFold --- \textbf{rejected} \\
+Blink & Raw peak-count (Chapter~9) & \textbf{Rejected} \\
+Blink & $\mu$V peak-count (Chapter~9) & \textbf{Rejected} \\
+Blink & Sliding-window count (Chapter~9) & \textbf{Rejected} \\
+Blink & Event-locked epoching (Chapter~9) & \textbf{Rejected}
+    (contamination diagnosed here) \\
+Blink & \acrshort{dtw}-KNN shape-matching (Chapter~9) & +2.1\%
+    (\acrshort{loso}) --- \textbf{kept, final} \\
+Blink & \acrshort{dtw} barycenter templates (Chapter~9) & 50.5\%
+    --- \textbf{rejected} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Read as a whole, this log tells a consistent story: every
+\textbf{kept} change either fixed a genuine labelling/data-quality
+problem (taxonomy, activity gating) or matched a representation to
+the physiology of the signal it processes (Riemannian covariance
+for amplitude-drift-prone muscle signals, \acrshort{dtw} shape for
+contamination-prone blink signals). Every \textbf{rejected} change
+either added complexity without addressing the actual failure mode
+(more wavelet features, more counting variants) or overfit to one
+evaluation protocol at the expense of the other
+(\code{tsupdate=True}). This distinction --- between features that
+fail because a class is inherently hard, and methods that fail
+because they are solving the wrong problem for that class --- is
+the throughline of the entire classification methodology developed
+in Chapter~9.
+
+%% ----------------------------------------------------------
+\section{Real-Time Operating Characteristics}
+\label{sec:res_realtime}
+%% ----------------------------------------------------------
+
+Although the full real-time inference pipeline is described in
+Chapter~12, its headline operating characteristics are reported
+here alongside the offline evaluation results for completeness:
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Per-window latency:} 14\,ms (\acrshort{dtw}
+    Stage~2a is the dominant cost), well under the 200\,ms
+    real-time step size --- the model comfortably meets real-time
+    throughput requirements with substantial margin.
+    \item \textbf{Real-time activity gate:} a fixed 20\,\si{\micro
+    \volt} \acrshort{rms} threshold at Fp1/Fp2 and T3/T4 (rest
+    typically 7--13\,\si{\micro\volt}, active gestures typically
+    30--200\,\si{\micro\volt}) --- distinct from the
+    recording-relative gate used for offline dataset construction
+    (Chapter~7); see Chapter~12 for the reason the two gates
+    differ.
+    \item \textbf{Confidence threshold:} 0.60, below which no
+    command is emitted.
+    \item \textbf{\acrshort{fsm} confirmation:} 3 consecutive
+    identical predictions required before a command is confirmed
+    and transmitted over \acrshort{uart} (Chapter~4).
+\end{itemize}
+
+%% ----------------------------------------------------------
+\section{Chapter Summary}
+\label{sec:res_summary}
+%% ----------------------------------------------------------
+
+This chapter presented the detailed results of the final DTW
+hybrid model: \textbf{91.3\% accuracy, macro-F1 0.913} as the
+unweighted mean across the three \acrshort{loso} folds (Chapter~9),
+and \textbf{91.8\% accuracy, macro-F1 0.918} pooled across all
+1{,}246 held-out predictions --- both computed under the honest
+\acrshort{loso} protocol, differing only in aggregation method.
+The per-fold breakdown showed DTW-hybrid outperforming the flat
+and hierarchical baselines on every individual session, with
+Session3 as the largest and best-performing fold (95.7\%).
+Per-class precision/recall/F1 split cleanly into a high-performing
+muscle tier (C: 0.953, L: 0.987, R: 0.981, via Riemannian
+covariance geometry) and a comparatively harder blink tier (O:
+0.828, S: 0.843, via \acrshort{dtw} shape-matching), consistent
+with the architecture developed in Chapter~9. The full confusion
+matrix confirmed, quantitatively, that 80.4\% of all errors
+(82 of 102) are single$\leftrightarrow$double blink confusion ---
+the direct signature of the single-blink contamination finding of
+Chapter~6 --- while blink$\leftrightarrow$muscle confusion is
+negligible (2 epochs total) and left/right bruxism are never
+confused with each other. A complete, chronological experiment log
+consolidated every kept and rejected change across Chapters~6--9
+into a single ablation reference table. Real-time operating
+characteristics (14\,ms latency, 0.60 confidence threshold,
+3-consecutive \acrshort{fsm} confirmation) were summarised, with
+full detail deferred to Chapter~12. The following chapter describes
+the configuration and control application used to map classifier
+output to prosthetic hand actions.

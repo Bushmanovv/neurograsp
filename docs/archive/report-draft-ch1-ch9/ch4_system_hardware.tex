@@ -1,0 +1,582 @@
+%% ============================================================
+%%  CHAPTER 4 — METHODOLOGY OVERVIEW
+%% ============================================================
+\chapter{Methodology Overview}
+\label{ch:methodology}
+
+This chapter provides a high-level, end-to-end walkthrough of the
+complete methodology before the subsequent chapters examine each
+stage in detail. The aim is to give the reader a clear mental map
+of how a raw \acrshort{eeg} recording is progressively transformed
+into a physical prosthetic hand action, and how the individual
+processing stages connect to one another. Each stage is introduced
+conceptually and illustrated with a diagram; the full mathematical,
+algorithmic, and implementation details are deferred to the
+dedicated chapters that follow.
+
+Section~\ref{sec:mo_master} presents the master architecture of the
+complete system. Section~\ref{sec:mo_dataflow} traces the
+transformation of the data through the pipeline, showing how its
+shape and meaning change at each stage.
+Section~\ref{sec:mo_collection} introduces the data collection
+stage. Section~\ref{sec:mo_preprocessing} introduces the signal
+processing stage. Section~\ref{sec:mo_features} introduces the
+feature extraction stage. Section~\ref{sec:mo_classification}
+introduces the classification stage. Section~\ref{sec:mo_inference}
+introduces the real-time inference stage.
+Section~\ref{sec:mo_summary} summarises the chapter and maps each
+stage to its detailed chapter.
+
+%% ----------------------------------------------------------
+\section{Master System Architecture}
+\label{sec:mo_master}
+%% ----------------------------------------------------------
+
+At the highest level, the system is a pipeline that converts brain
+and muscle electrical activity --- captured at the scalp --- into
+discrete control commands for a prosthetic hand. The pipeline
+operates in two distinct modes that share the same core processing
+stages: an offline \emph{training mode} that learns a classifier
+from pre-recorded data, and an online \emph{inference mode} that
+applies the learned classifier to a live signal stream in real
+time.
+
+Figure~\ref{fig:mo_master} shows the master architecture. The
+shared stages --- preprocessing, activity gating, and feature
+extraction --- are deliberately identical in both modes, which is
+the key to ensuring that the model encounters the same kind of data
+during deployment as it did during training.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.55cm and 1.1cm,
+    box/.style={rectangle, rounded corners=2pt, draw=black!70,
+                very thick, minimum width=3.0cm, minimum height=0.9cm,
+                align=center, font=\footnotesize},
+    shared/.style={box, fill=blue!12},
+    train/.style={box, fill=orange!15},
+    infer/.style={box, fill=green!12},
+    hw/.style={box, fill=red!12},
+    arow/.style={-{Stealth[length=2mm]}, thick},
+]
+
+% Acquisition (shared top)
+\node[shared] (acq) {Stage 1: EEG Acquisition\\\scriptsize 19 ch, 200\,Hz, EDF};
+
+% Two modes branching
+\node[train, below left=0.9cm and -1.0cm of acq] (edf) {Training Mode\\\scriptsize Recorded EDF files};
+\node[infer, below right=0.9cm and -1.0cm of acq] (stream) {Inference Mode\\\scriptsize Live EEG stream};
+
+% Shared preprocessing
+\node[shared, below=1.5cm of acq] (pre) {Stage 2: Preprocessing\\\scriptsize Notch, bandpass, CAR};
+\node[shared, below=0.55cm of pre] (gate) {Stage 3: Activity Gate\\\scriptsize RMS threshold};
+\node[shared, below=0.55cm of gate] (feat) {Stage 4: Feature Extraction\\\scriptsize channel-aware features};
+
+% Split: train vs classify
+\node[train, below left=0.9cm and 0.1cm of feat] (train) {Train Hybrid Model\\\scriptsize features + DTW + Riemann};
+\node[infer, below right=0.9cm and 0.1cm of feat] (clf) {Stage 5: Classify\\\scriptsize hybrid router};
+
+% Model store
+\node[box, fill=gray!15, below=0.7cm of train] (model) {Model store\\\scriptsize trained hybrid model};
+
+% Inference engine + hardware
+\node[infer, below=0.9cm of clf] (fsm) {Stage 6: Inference Engine\\\scriptsize Confidence + FSM};
+\node[hw, below=0.55cm of fsm] (hand) {Pi5 $\to$ ESP32 $\to$ hand\\\scriptsize label $\to$ 6 servos};
+
+% Arrows: acquisition to modes
+\draw[arow] (acq) -- (edf);
+\draw[arow] (acq) -- (stream);
+% modes into preprocessing
+\draw[arow] (edf) -- (pre);
+\draw[arow] (stream) -- (pre);
+% shared chain
+\draw[arow] (pre) -- (gate);
+\draw[arow] (gate) -- (feat);
+% feat to train and classify
+\draw[arow] (feat) -- (train);
+\draw[arow] (feat) -- (clf);
+% train to model to classify
+\draw[arow] (train) -- (model);
+\draw[arow] (model.east) -- ++(0.6,0) |- (clf.west);
+% classify to fsm to hand
+\draw[arow] (clf) -- (fsm);
+\draw[arow] (fsm) -- (hand);
+
+\end{tikzpicture}
+\caption{Master system architecture. Blue stages are shared between
+training and inference, ensuring train--inference consistency.
+Orange stages are training-only; green stages are inference-only;
+the red stage is the physical hardware. The hybrid model learned in
+training mode is loaded by the inference engine, which emits an
+abstract command label to the ESP32 hand controller for live
+operation.}
+\label{fig:mo_master}
+\end{figure}
+
+The single most important architectural decision visible in
+Figure~\ref{fig:mo_master} is that Stages~2--4 (preprocessing,
+activity gating, and feature extraction) are reused verbatim in
+both modes. A classifier trained on features computed one way will
+fail if, at inference time, the features are computed even slightly
+differently. By sharing the exact same code path, the system
+guarantees that an epoch seen during live inference is processed
+identically to the epochs the model was trained on.
+
+%% ----------------------------------------------------------
+\section{Data Transformation Through the Pipeline}
+\label{sec:mo_dataflow}
+%% ----------------------------------------------------------
+
+As data flows through the pipeline, its representation changes at
+each stage --- from a long continuous multichannel recording, to
+short windowed epochs, to a compact numerical feature vector, to a
+single class label, and finally to a one-byte command character
+sent to the prosthetic hand. Figure~\ref{fig:mo_dataflow} traces
+this transformation, making explicit the shape and meaning of the
+data at each step.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.9cm,
+    stage/.style={rectangle, rounded corners=2pt, draw=black!60,
+                  thick, minimum width=3.3cm, minimum height=0.8cm,
+                  align=center, font=\scriptsize, fill=blue!8},
+    data/.style={rectangle, draw=black!30, dashed, minimum width=4.0cm,
+                 minimum height=0.7cm, align=center,
+                 font=\scriptsize\ttfamily, fill=gray!8},
+    arow/.style={-{Stealth[length=2mm]}, thick},
+]
+
+\node[stage] (s1) {Raw recording};
+\node[data, right=1.5cm of s1] (d1) {19 $\times$ N samples};
+
+\node[stage, below=0.9cm of s1] (s2) {Preprocess + epoch};
+\node[data, right=1.5cm of s2] (d2) {19 $\times$ 400 per epoch};
+
+\node[stage, below=0.9cm of s2] (s3) {Activity gate};
+\node[data, right=1.5cm of s3] (d3) {active epochs only};
+
+\node[stage, below=0.9cm of s3] (s4) {Feature extraction};
+\node[data, right=1.5cm of s4] (d4) {feature vector};
+
+\node[stage, below=0.9cm of s4] (s5) {Hybrid classify};
+\node[data, right=1.5cm of s5] (d5) {1 of 5 classes};
+
+\node[stage, below=0.9cm of s5] (s6) {FSM + UART};
+\node[data, right=1.5cm of s6] (d6) {1 command label};
+
+\foreach \a/\b in {s1/s2, s2/s3, s3/s4, s4/s5, s5/s6}
+    \draw[arow] (\a) -- (\b);
+
+\foreach \s/\d in {s1/d1, s2/d2, s3/d3, s4/d4, s5/d5, s6/d6}
+    \draw[arow, gray] (\s) -- (\d);
+
+\end{tikzpicture}
+\caption{Data transformation through the pipeline. The left column
+shows the processing stage; the right column (dashed) shows the
+shape and meaning of the data after that stage. A continuous
+multichannel recording is progressively reduced to a single command
+label sent to the hand controller.}
+\label{fig:mo_dataflow}
+\end{figure}
+
+This progressive reduction --- from raw signal to command --- is the
+essence of the system. Each stage discards information that is
+irrelevant to the control task while preserving and concentrating
+the information that distinguishes one gesture from another. The
+following sections introduce each stage in turn.
+
+%% ----------------------------------------------------------
+\section{Stage 1--2: Data Collection and Signal Acquisition}
+\label{sec:mo_collection}
+%% ----------------------------------------------------------
+
+The pipeline begins with the deliberate production of voluntary
+\acrshort{eeg} artifacts by the subject. Rather than relying on
+subtle motor imagery, the subject performs five large, distinct
+facial and jaw gestures --- single and double eye blinks; a
+bilateral jaw clinch; and left and right lateral jaw bruxism ---
+each of which produces a characteristic, high-amplitude signal at
+specific electrode sites. A 19-channel \acrshort{eeg} device records
+these signals at \SI{200}{\hertz} and stores them in
+\acrshort{edf} files, one continuous recording per gesture class.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm,
+    src/.style={rectangle, rounded corners=2pt, draw=black!60, thick,
+                minimum width=2.2cm, minimum height=0.8cm,
+                align=center, font=\scriptsize},
+    blink/.style={src, fill=blue!12},
+    jaw/.style={src, fill=orange!15},
+    sink/.style={rectangle, rounded corners=2pt, draw=black!70,
+                 very thick, minimum width=2.4cm, minimum height=1.0cm,
+                 align=center, font=\scriptsize, fill=gray!12},
+    arow/.style={-{Stealth[length=2mm]}, thick},
+]
+
+\node[blink] (b1) {Single blink\\\scriptsize Fp1, Fp2};
+\node[blink, below=0.4cm of b1] (b2) {Double blink\\\scriptsize Fp1, Fp2};
+\node[jaw, below=0.4cm of b2] (j1) {Clinch\\\scriptsize T3 $\approx$ T4};
+\node[jaw, below=0.4cm of j1] (j2) {Left bruxism\\\scriptsize T3 $>$ T4};
+\node[jaw, below=0.4cm of j2] (j3) {Right bruxism\\\scriptsize T4 $>$ T3};
+
+\node[sink, right=2.8cm of b2, yshift=-1.0cm] (edf) {19-channel\\EDF recording\\\scriptsize 200\,Hz};
+
+\foreach \n in {b1,b2,j1,j2,j3}
+    \draw[arow] (\n.east) -- (edf.west);
+
+\end{tikzpicture}
+\caption{Stage 1--2: five voluntary artifact gestures and the
+electrode sites at which each is most prominent. Blink gestures
+(blue) appear at the frontal electrodes Fp1/Fp2; jaw gestures
+(orange) appear at the temporal electrodes T3/T4, with the
+left/right amplitude balance distinguishing the three jaw classes.
+All gestures are captured by the same 19-channel EDF recording.}
+\label{fig:mo_collection}
+\end{figure}
+
+A central challenge introduced at this stage is that each recording
+contains not only the active gesture events but also long rest
+periods between them. Because the entire recording carries a single
+class label, these rest windows become mislabelled training data ---
+a problem resolved by the activity gate in Stage~3. The complete
+data collection protocol, gesture-by-gesture physiology, recording
+environment, and dataset statistics are described in
+Chapter~6.
+
+%% ----------------------------------------------------------
+\section{Stage 2: Signal Processing}
+\label{sec:mo_preprocessing}
+%% ----------------------------------------------------------
+
+The raw \acrshort{edf} recordings are not directly usable for
+classification: they contain power-line interference, low-frequency
+drift, broadband noise, and spatial common-mode signals. The signal
+processing stage cleans each recording through a fixed sequence of
+operations and then slices the continuous signal into short,
+fixed-length windows (epochs) suitable for feature extraction.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.45cm,
+    step/.style={rectangle, rounded corners=2pt, draw=black!60, thick,
+                 minimum width=6.4cm, minimum height=0.7cm,
+                 align=center, font=\scriptsize, fill=blue!8},
+    arow/.style={-{Stealth[length=2mm]}, thick},
+]
+
+\node[step] (n)  {Notch filter \,---\, remove 50\,Hz power-line};
+\node[step, below=of n]  (bp) {Bandpass 1--45\,Hz \,---\, keep blink + jaw EMG};
+\node[step, below=of bp] (car){Common Average Reference \,---\, spatial clean};
+\node[step, below=of car](ep) {Epoch \,---\, 2.0\,s windows, 75\% overlap};
+\node[step, below=of ep, fill=orange!12] (rej){Amplitude reject \,---\, drop $>$\,150\,$\mu$V epochs};
+\node[step, below=of rej]  (z) {Per-recording z-score \,---\, session invariance};
+
+\foreach \a/\b in {n/bp, bp/car, car/ep, ep/rej, rej/z}
+    \draw[arow] (\a) -- (\b);
+
+\end{tikzpicture}
+\caption{Stage 2: the signal processing sub-pipeline applied to
+every recording. Each operation is applied identically during
+training and inference. The output is a set of clean, normalised,
+fixed-length epochs ready for the activity gate and feature
+extraction.}
+\label{fig:mo_preprocessing}
+\end{figure}
+
+The signal processing stage is deterministic and parameter-driven:
+the same filters, the same window length, and the same normalisation
+are applied to every epoch the system ever processes. The detailed
+filter mathematics, zero-phase filtering rationale, epoch overlap
+strategy, and the consequences for evaluation are presented in
+Chapter~7.
+
+%% ----------------------------------------------------------
+\section{Stage 3: Activity Gating}
+\label{sec:mo_gating}
+%% ----------------------------------------------------------
+
+Before features are extracted, the activity gate examines each
+epoch and decides whether it contains a genuine gesture or merely a
+rest window. This single decision is one of the most consequential
+in the entire pipeline: it removes the mislabelled rest epochs that
+would otherwise teach the classifier contradictory lessons, and it
+does so using the same physiological channels that carry the
+gestures themselves.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=1.0cm,
+    box/.style={rectangle, rounded corners=2pt, draw=black!60, thick,
+                minimum width=2.6cm, minimum height=0.9cm,
+                align=center, font=\scriptsize},
+    epoch/.style={box, fill=gray!10},
+    keep/.style={box, fill=green!15},
+    drop/.style={box, fill=red!12},
+    dec/.style={diamond, aspect=2, draw=black!70, very thick,
+                fill=blue!10, align=center, font=\scriptsize,
+                inner sep=1pt},
+    arow/.style={-{Stealth[length=2mm]}, thick},
+]
+
+\node[epoch] (ep) {Epoch\\\scriptsize 19 $\times$ 400};
+\node[dec, right=1.4cm of ep] (d)
+    {RMS of Fp1/Fp2\\or T3/T4\\$\geq$ 20\,$\mu$V?};
+\node[keep, above right=0.4cm and 1.6cm of d] (k)
+    {Keep\\\scriptsize active gesture};
+\node[drop, below right=0.4cm and 1.6cm of d] (dr)
+    {Discard\\\scriptsize rest window};
+
+\draw[arow] (ep) -- (d);
+\draw[arow] (d) -- node[above, font=\scriptsize] {yes} (k);
+\draw[arow] (d) -- node[below, font=\scriptsize] {no}  (dr);
+
+\end{tikzpicture}
+\caption{Stage 3: the activity gate. Each epoch's RMS energy at the
+gesture-relevant electrodes (Fp1/Fp2 for blinks, T3/T4 for jaw) is
+compared against a 20\,$\mu$V threshold. Active epochs proceed to
+feature extraction; rest epochs --- roughly half of all epochs ---
+are discarded, removing the mislabelled-rest problem and yielding a
++3.1\% accuracy improvement.}
+\label{fig:mo_gating}
+\end{figure}
+
+Across the dataset, the gate retains roughly half of all extracted
+epochs, discarding the rest windows so that only genuine gesture
+epochs are used for training and evaluation. The gate's design,
+threshold calibration, and quantitative impact are detailed in
+Chapter~7 alongside the rest of the signal processing pipeline.
+
+%% ----------------------------------------------------------
+\section{Stage 4: Feature Extraction}
+\label{sec:mo_features}
+%% ----------------------------------------------------------
+
+Each surviving epoch --- a $19 \times 400$ matrix of cleaned samples
+--- is converted into a channel-aware feature vector. Rather
+than applying a uniform transform across all channels, the system
+extracts different feature sets from different electrode groups,
+each chosen for its physiological relevance to the artifacts being
+classified.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=1.0cm,
+    epoch/.style={rectangle, rounded corners=2pt, draw=black!70,
+                  very thick, minimum width=2.4cm, minimum height=1.0cm,
+                  align=center, font=\scriptsize, fill=gray!12},
+    grp/.style={rectangle, rounded corners=2pt, draw=black!60, thick,
+                minimum width=3.0cm, minimum height=1.1cm,
+                align=center, font=\scriptsize},
+    frontal/.style={grp, fill=blue!12},
+    temporal/.style={grp, fill=orange!15},
+    global/.style={grp, fill=green!12},
+    vec/.style={rectangle, rounded corners=2pt, draw=black!70,
+                very thick, minimum width=2.6cm, minimum height=1.0cm,
+                align=center, font=\scriptsize, fill=purple!12},
+    arow/.style={-{Stealth[length=2mm]}, thick},
+]
+
+\node[epoch] (ep) {Epoch\\\scriptsize 19 $\times$ 400};
+
+\node[frontal, right=2.0cm of ep, yshift=1.4cm] (f)
+    {Frontal (Fp1, Fp2)\\\scriptsize blink shape\\\scriptsize 38 features};
+\node[temporal, right=2.0cm of ep] (t)
+    {Temporal (T3, T4)\\\scriptsize jaw EMG + asymmetry\\\scriptsize 36 features};
+\node[global, right=2.0cm of ep, yshift=-1.4cm] (g)
+    {Global (19 ch)\\\scriptsize kurtosis\\\scriptsize 19 features};
+
+\node[vec, right=2.2cm of t] (v)
+    {Feature vector\\\scriptsize 93 dimensions};
+
+\draw[arow] (ep.east) -- (f.west);
+\draw[arow] (ep.east) -- (t.west);
+\draw[arow] (ep.east) -- (g.west);
+\draw[arow] (f.east) -- (v.west);
+\draw[arow] (t.east) -- (v.west);
+\draw[arow] (g.east) -- (v.west);
+
+\end{tikzpicture}
+\caption{Stage 4: channel-aware feature extraction. The epoch is
+split into three physiologically motivated channel groups. The
+frontal group captures blink morphology, the temporal group
+captures jaw EMG and the left/right asymmetry that separates
+bruxism directions, and the global group captures whole-scalp
+statistics. The three subsets concatenate into one 93-dimensional
+vector.}
+\label{fig:mo_features}
+\end{figure}
+
+This channel-aware design directly encodes domain knowledge: blink
+information lives at the front of the head, jaw information lives at
+the temporal sites, and the difference between left and right
+bruxism is captured by an explicit asymmetry index. The complete
+feature inventory, all defining equations, and the feature
+importance analysis are presented in Chapter~8.
+
+%% ----------------------------------------------------------
+\section{Stage 5: Classification}
+\label{sec:mo_classification}
+%% ----------------------------------------------------------
+
+The feature vector is passed to the \textbf{hybrid classification
+architecture} that assigns it to one of the five gesture classes.
+Rather than a single monolithic classifier, the system uses a
+two-stage router matched to the two signal families: hand-crafted
+features first separate blink gestures from muscle gestures, and each
+family is then sub-classified by the method best suited to its
+physiology --- Dynamic Time Warping shape-matching for blinks, and
+Riemannian covariance geometry for muscle gestures. During inference,
+this router predicts a class (and a confidence score) for each
+incoming epoch.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=1.0cm,
+    box/.style={rectangle, rounded corners=2pt, draw=black!60, thick,
+                minimum width=2.6cm, minimum height=0.9cm,
+                align=center, font=\scriptsize},
+    data/.style={box, fill=gray!10},
+    proc/.style={box, fill=blue!10},
+    dtw/.style={box, fill=green!12},
+    riem/.style={box, fill=orange!15},
+    out/.style={box, fill=purple!12},
+    dec/.style={diamond, aspect=1.6, draw=black!70, thick,
+                fill=blue!10, align=center, font=\scriptsize, inner sep=1pt},
+    arow/.style={-{Stealth[length=2mm]}, thick},
+]
+
+\node[data] (v) {Feature\\vector};
+\node[dec, right=1.2cm of v] (route) {blink\\or\\muscle?};
+\node[dtw, above right=0.5cm and 1.3cm of route] (dtw) {DTW--KNN\\\scriptsize blink shape};
+\node[riem, below right=0.5cm and 1.3cm of route] (riem) {Riemannian\\\scriptsize muscle covariance};
+\node[out, below right=1.4cm and 1.3cm of dtw] (cls) {Class + conf.\\\scriptsize 1 of 5};
+
+\draw[arow] (v) -- (route);
+\draw[arow] (route) -- node[above, font=\scriptsize]{blink} (dtw);
+\draw[arow] (route) -- node[below, font=\scriptsize]{muscle} (riem);
+\draw[arow] (dtw) -- (cls);
+\draw[arow] (riem) -- (cls);
+
+\end{tikzpicture}
+\caption{Stage 5: the hybrid classifier. Hand-crafted features first
+route each epoch to the blink or muscle family; blink epochs are then
+sub-classified by Dynamic Time Warping shape-matching, and muscle
+epochs by Riemannian covariance geometry. Under the strict
+cross-session evaluation protocol, the full architecture reports
+91.3\% accuracy with a macro-F1 of 0.913.}
+\label{fig:mo_classification}
+\end{figure}
+
+The design of this hybrid architecture, the failed alternatives that
+motivated it, the \acrshort{smote} balancing protocol, and ---
+critically --- the data leakage audit and cross-session evaluation
+that distinguish honest from inflated accuracy figures are all
+covered in detail in Chapter~9.
+
+%% ----------------------------------------------------------
+\section{Stage 6: Real-Time Inference and Actuation}
+\label{sec:mo_inference}
+%% ----------------------------------------------------------
+
+In live operation, a continuous \acrshort{eeg} stream is processed
+through a sliding window. Each window is preprocessed, gated,
+feature-extracted, and classified exactly as in training. To prevent
+single misclassifications from producing erratic hand movements, the
+raw predictions pass through two safety layers: a confidence
+threshold that rejects uncertain predictions, and a Finite State
+Machine that requires several consecutive identical predictions
+before a command is issued.
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[
+    node distance=0.75cm,
+    box/.style={rectangle, rounded corners=2pt, draw=black!60, thick,
+                minimum width=6.2cm, minimum height=0.7cm,
+                align=center, font=\scriptsize, fill=green!10},
+    safe/.style={box, fill=orange!12},
+    hw/.style={box, fill=red!12},
+    arow/.style={-{Stealth[length=2mm]}, thick},
+]
+
+\node[box] (win) {Sliding window \,---\, 2.0\,s, 0.2\,s step};
+\node[box, below=of win] (proc) {Preprocess + gate + features \,(shared)};
+\node[box, below=of proc] (pred) {Hybrid classifier prediction};
+\node[safe, below=of pred] (conf) {Confidence threshold \,$\geq$ 0.60};
+\node[safe, below=of conf] (fsm) {FSM \,---\, 3 consecutive agree};
+\node[hw, below=of fsm] (ser) {UART label \,$\rightarrow$ ESP32};
+\node[hw, below=of ser] (act) {Servo actuation \,---\, hand moves};
+
+\foreach \a/\b in {win/proc, proc/pred, pred/conf, conf/fsm, fsm/ser, ser/act}
+    \draw[arow] (\a) -- (\b);
+
+\end{tikzpicture}
+\caption{Stage 6: real-time inference and actuation. The shared
+preprocessing and feature stages (green) mirror the training path
+exactly. Two safety layers (orange) --- a confidence threshold and a
+three-window FSM agreement requirement --- filter transient
+misclassifications before a single command label is sent over UART to
+the ESP32 controller, which drives the servo motors.}
+\label{fig:mo_inference}
+\end{figure}
+
+Only when both safety conditions are satisfied is a single command
+label transmitted over the UART link to the ESP32 controller, which
+resolves it to a hand action and drives the servo motors. The sliding
+window mechanics, threshold calibration, FSM design, UART command
+protocol, and end-to-end latency analysis are presented in
+Chapter~12.
+
+%% ----------------------------------------------------------
+\section{Chapter Summary}
+\label{sec:mo_summary}
+%% ----------------------------------------------------------
+
+This chapter provided a high-level overview of the complete
+methodology, tracing the path from voluntary artifact gesture to
+prosthetic hand action through six pipeline stages. The system
+converts a continuous 19-channel \acrshort{eeg} recording into a
+single command label by progressively cleaning, windowing, gating,
+and summarising the signal, then classifying the result through the
+hybrid architecture and filtering the predictions through safety
+layers before actuation. The defining architectural principle is that
+the preprocessing, gating, and feature extraction stages are shared
+identically between offline training and online inference,
+guaranteeing that the model sees consistent data in both modes.
+
+Table~\ref{tab:mo_chapter_map} maps each pipeline stage to the
+chapter in which it is described in full detail.
+
+\begin{table}[htbp]
+\centering
+\caption{Mapping of pipeline stages to their detailed chapters.}
+\label{tab:mo_chapter_map}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{l l l}
+\toprule
+\textbf{Stage} & \textbf{Description} & \textbf{Detailed in} \\
+\midrule
+Stage 1    & EEG acquisition (hardware)   & Chapter~4 \\
+Stage 1--2 & Data collection protocol     & Chapter~6 \\
+Stage 2    & Signal processing            & Chapter~7 \\
+Stage 3    & Activity gating              & Chapter~7 \\
+Stage 4    & Feature extraction           & Chapter~8 \\
+Stage 5    & Classification (hybrid)      & Chapter~9 \\
+Stage 5    & Results \& analysis           & Chapter~10 \\
+Stage 6    & Real-time inference          & Chapter~12 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+With this mental map in place, the following chapters examine each
+stage in depth, beginning with the data collection protocol in
+Chapter~6.

@@ -1,0 +1,212 @@
+%% ============================================================
+%%  CHAPTER 14 — CONCLUSION AND FUTURE WORK
+%% ============================================================
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+This final chapter closes the report. Section~\ref{sec:conc_summary}
+summarises what was built and achieved, against the objectives and
+contributions set out in Chapter~1. Section~\ref{sec:conc_future}
+consolidates every concrete, unresolved future-work item raised
+across the report into a single organised list.
+Section~\ref{sec:conc_remarks} offers closing remarks on the
+project's scope and its place as a foundation for further work.
+
+%% ----------------------------------------------------------
+\section{Summary of Achievement}
+\label{sec:conc_summary}
+%% ----------------------------------------------------------
+
+This project set out to build an artifact-based \acrshort{bci}
+system that translates voluntary \acrshort{eog} and \acrshort{emg}
+gestures --- blinks and jaw movements --- into discrete commands for
+a 3D-printed prosthetic hand, evaluated under a protocol strict
+enough to be trusted as a genuine estimate of deployment
+performance. Measured against the seven contributions claimed in
+Chapter~1, and checked against concrete evidence in Chapter~13, the
+central results are:
+
+\begin{itemize}[leftmargin=*]
+    \item A \textbf{three-way hybrid classification architecture} ---
+    hand-crafted features for blink/muscle routing, \acrshort{dtw}
+    shape-matching for blink sub-classification, Riemannian
+    covariance geometry for muscle sub-classification --- reaching
+    \textbf{91.3\% accuracy} (unweighted \acrshort{loso} mean) or
+    \textbf{91.8\%} (pooled), against an 85.1\% flat-classifier
+    baseline (Chapter~9).
+    \item A \textbf{rigorous, leakage-audited evaluation
+    methodology}, including a four-test diagnostic audit and a
+    label-permutation shuffle test, that both diagnosed an 8--10-point
+    inflation in the naive evaluation protocol and established
+    Leave-One-Session-Out as the honest reporting standard used
+    throughout this report (Chapter~9).
+    \item A \textbf{purpose-built, three-session dataset} of
+    voluntary artifact recordings (Chapter~6), collected,
+    diagnosed, and iteratively refined --- including discovering
+    and fixing a silent data-loading bug and a critical single-blink
+    contamination problem that directly shaped the final
+    classification architecture.
+    \item A \textbf{complete, physically fabricated prosthetic hand}
+    (Chapter~4) and a \textbf{designed control application}
+    (Chapter~11) --- an offline web app with a 3D digital twin,
+    live mapping and pose editors, and a two-contract firmware
+    interface --- built to the point of a working, hardware-verified
+    firmware scaffold and a fully functional mock-mode web
+    prototype.
+    \item A \textbf{real-time inference pipeline} (Chapter~12) that
+    reuses the offline-trained model unmodified, adds a
+    deployment-appropriate fixed activity gate, confidence
+    threshold, and \acrshort{fsm} confirmation layer, and meets its
+    real-time latency budget with substantial margin (14\,ms per
+    window against a 200\,ms step).
+\end{itemize}
+
+Consistent with the project scope defined in Chapter~1, this is
+engineering proof-of-concept work: a single-subject,
+discrete-command \acrshort{bci} system, not a clinically validated
+or cross-subject-generalisable one. Within that scope, the system
+meets its own design goals, and --- as important to this report as
+the headline number itself --- every major design decision along
+the way is backed by a documented experiment, including the ones
+that failed (Chapters~6--9).
+
+%% ----------------------------------------------------------
+\section{Future Work}
+\label{sec:conc_future}
+%% ----------------------------------------------------------
+
+Every item below was identified as concrete, unresolved future work
+somewhere in this report; they are consolidated here by category
+rather than repeated in narrative form.
+
+\subsection{Data and Model}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Clean single-blink re-recording.} The residual
+    single-blink contamination (Chapters~6, 10, 13) is the largest
+    remaining accuracy ceiling in the system and is not fixable by
+    further classifier changes. A dedicated re-recording session
+    with deliberate, experimenter-verified pauses of at least
+    1.5\,s between individual blinks would directly test whether
+    the \acrshort{dtw} architecture's remaining error is
+    data-limited (as the current evidence strongly suggests,
+    Chapter~10) rather than method-limited. The event-locked
+    detection harness built during Attempt~4 of the blink
+    investigation (Chapter~9) is already in place to validate any
+    such re-recording.
+    \item \textbf{Transfer learning across subjects.} The current
+    system is single-subject by design (Chapters~1, 6). A natural
+    extension is a general, multi-subject base model, fine-tuned per
+    new user with a short (5--10 minute) personal calibration
+    session, which would reduce the per-user data-collection burden
+    that currently requires three full recording sessions
+    (Chapter~6) before a new user can be supported at all.
+    \item \textbf{Synchronised event markers.} The failed
+    \code{Random/} mixed-gesture validation attempt (Chapter~6)
+    traced its failure to the marker-logging application and the
+    EEG amplifier running on two separate, unsynchronised clocks.
+    Recording event markers directly on the EEG acquisition device
+    itself, on the same clock as the signal, would resolve this and
+    enable a genuine free-running, mixed-gesture validation set ---
+    something the project currently lacks entirely.
+\end{enumerate}
+
+\subsection{Hardware Deployment}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Emotiv EPOC~X validation.} As discussed in
+    Chapter~13, every result in this report was produced on the
+    19-channel data-collection device, not the 14-channel Emotiv
+    EPOC~X that was always the intended deployment target. The
+    approximate channel correspondence identified (T3/T4
+    $\rightarrow$ T7/T8; Fp1/Fp2 $\rightarrow$ AF3/AF4) has not been
+    validated with real recordings. The recommended path is direct
+    re-calibration on the target device --- collecting a fresh
+    multi-session dataset on the Emotiv itself, following the same
+    protocol as Chapter~6 --- rather than attempting to transfer the
+    existing model via the approximate channel mapping, since a
+    transferred model's accuracy on different hardware, electrode
+    geometry, and the Emotiv's onboard 45\,Hz hardware filter cannot
+    be assumed without direct testing. Raw signal access on the
+    Emotiv device (bypassing the vendor's Cortex software layer, via
+    a library such as CyKit) would be needed to reproduce this
+    project's preprocessing pipeline (Chapter~7) exactly.
+    \item \textbf{Real-time activity gate recalibration.} The fixed
+    20\,\si{\micro\volt} real-time activity gate (Chapter~12) was
+    calibrated against amplitude distributions from the
+    data-collection hardware and has not been validated on a
+    different device or across multiple live sessions. A short,
+    automatic per-session calibration routine --- for example,
+    sampling a brief rest period at the start of each session to set
+    a session-specific threshold, approximating the adaptivity of
+    the offline recording-relative gate (Chapter~7) without
+    requiring a full recording in advance --- would make the
+    real-time gate more robust to exactly the kind of session-to-session
+    variation \acrshort{loso} evaluation (Chapter~9) is designed to
+    stress-test.
+\end{enumerate}
+
+\subsection{System Integration}
+
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Complete Firmware Layers 1--5.} Only Layer~0 is
+    verified on physical hardware at the time of writing
+    (Chapter~11). Servo control and fail-safe (Layer~1), the WiFi
+    access point and live status dashboard (Layer~2), the mapping
+    editor (Layer~3), the pose creator (Layer~4), and the 3D digital
+    twin (Layer~5, stretch goal) all remain to be built and flashed.
+    \item \textbf{Resolve the Contract~A label mismatch.} The
+    shipped \code{contracts.h} and default \code{mappings.json}
+    currently define a placeholder seven-label set that does not
+    match the classifier's real five-label output (Chapter~11). This
+    is a small, well-scoped fix (Table~\ref{tab:label_reconciliation})
+    but is a blocking prerequisite for Layer~1, since the
+    \acrshort{uart} listener would otherwise be listening for labels
+    the classifier will never send.
+    \item \textbf{End-to-end integration testing.} The real-time
+    inference pipeline (Chapter~12) and the firmware
+    (Chapter~11) have each been validated independently but never
+    run together against physical hardware: the inference pipeline
+    against recorded data and the offline-trained model, and the
+    firmware only up to Layer~0. Connecting the two --- live
+    \acrshort{eeg} through inference through \acrshort{uart} through
+    the ESP32 to the physical servos --- is the natural next
+    integration milestone once Firmware Layer~1 exists.
+    \item \textbf{Implement saved gesture sequences.} Identified in
+    Chapter~11 as a planned-but-unimplemented feature from an
+    earlier project planning document: chaining multiple saved poses
+    into an ordered, replayable sequence, exposed through a new
+    Contract~B endpoint and an extended pose data model. This is a
+    web-app and firmware feature addition, not a classification or
+    signal-processing change.
+\end{enumerate}
+
+%% ----------------------------------------------------------
+\section{Closing Remarks}
+\label{sec:conc_remarks}
+%% ----------------------------------------------------------
+
+This report has tried to document not just what the final system
+achieves, but how it got there --- including the evaluation crisis
+that nearly went unnoticed, the four blink-classification methods
+that failed before a fifth succeeded, and the honest, unresolved
+gaps that remain in firmware integration and target-hardware
+validation. That choice was deliberate: a graduation project's value
+lies as much in the documented reasoning behind its design decisions
+as in its headline accuracy figure, and a 91.3\% result reached via
+a rigorous, leakage-audited protocol and a physiology-matched
+architecture is worth more than a higher number reached by a less
+careful evaluation.
+
+As stated in Chapter~1, this project is explicitly scoped as
+engineering proof-of-concept, not clinical validation: it does not
+include trials with amputee subjects, formal usability studies, or
+regulatory review. What it does provide is a complete, working,
+end-to-end demonstration --- from a voluntary blink or jaw
+contraction, through a rigorously evaluated classifier, to a
+physical prosthetic hand actuating the corresponding command --- and
+a clearly enumerated set of concrete next steps
+(Section~\ref{sec:conc_future}) for turning that demonstration into
+a system ready for the target consumer hardware and, eventually, for
+the kind of user-facing evaluation that engineering proof-of-concept
+work is meant to earn the right to attempt.
