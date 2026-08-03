@@ -1,0 +1,959 @@
+% =====================================================================
+%  EEG-BCI Accuracy-Improvement Documentation
+%  Compile with pdfLaTeX (Overleaf default). No external assets needed.
+% =====================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+
+% ---- colours -------------------------------------------------------
+\definecolor{good}{RGB}{20,120,40}
+\definecolor{bad}{RGB}{170,30,30}
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codekw}{RGB}{20,60,160}
+\newcommand{\up}[1]{\textcolor{good}{$+#1$}}
+\newcommand{\down}[1]{\textcolor{bad}{$-#1$}}
+
+% ---- code listing style -------------------------------------------
+\lstdefinestyle{py}{
+  language=Python, backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\footnotesize, keywordstyle=\color{codekw},
+  commentstyle=\color{gray}, breaklines=true, frame=single,
+  framesep=4pt, showstringspaces=false, columns=fullflexible,
+  xleftmargin=4pt, xrightmargin=4pt}
+\lstset{style=py}
+
+% ---- handy macros --------------------------------------------------
+\newcommand{\muv}{$\mu$V}
+\newcommand{\fone}{$F_1$}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{\textbf{Improving the Classification Accuracy of a\\
+Single-Subject EEG--BCI for Prosthetic-Hand Control}\\[4pt]
+\large A Detailed, Step-by-Step Account of the Methods, Experiments,\\
+and Results}
+\author{Karim Dwikat}
+\date{June 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This document records, in full detail, the sequence of experiments carried out
+to raise the classification accuracy of an electroencephalography (EEG)
+brain--computer interface (BCI) that maps facial/ocular artifacts to discrete
+prosthetic-hand commands for a \emph{single} subject. It describes the dataset,
+the complete signal-processing and machine-learning pipeline, and seven
+successive improvement steps. For every step it states the hypothesis, the exact
+method and tools used, the quantitative result (accuracy, per-class \fone{},
+confusion matrices), and the decision taken. Both \emph{successful} and
+\emph{rejected} ideas are reported, because the rejected ones shaped the final
+design. The accuracy progressed from a $65\%$ cross-session baseline to
+$\mathbf{85.2\%}$ (macro-\fone{} $=0.818$) using a six-class label scheme on
+corrected data with activity-gated epoching. Every number reported here is
+reproducible from the accompanying \code{eeg\_bci} Python package.
+\end{abstract}
+
+\tableofcontents
+\bigskip
+
+% ====================================================================
+\section{Introduction and Objective}
+% ====================================================================
+The goal of the project is a real-time BCI that controls a prosthetic hand from
+EEG. Because reliable motor-imagery decoding from a low-cost montage is hard, the
+system instead decodes \emph{deliberate facial/ocular gestures} (eye blinks and
+jaw movements) that produce large, repeatable EEG/EMG artifacts and map them to
+hand commands. The system is \textbf{single-subject}: the same person who trains
+the model also uses it. The objective of the work documented here is therefore
+\emph{per-session generalization for one person}, not cross-subject transfer.
+
+The classes and their command mapping (final, six-class scheme) are:
+
+\begin{center}
+\begin{tabular}{@{}cllc@{}}
+\toprule
+Label & Gesture (class) & Command & Char \\
+\midrule
+0 & \code{double\_blink}  & start / confirm & S \\
+1 & \code{single\_blink}  & open hand       & O \\
+2 & \code{triple\_blink}  & (reserved, ``TB'') & T \\
+3 & \code{clinch}         & close hand      & C \\
+4 & \code{bruxism\_left}  & rotate left     & L \\
+5 & \code{bruxism\_right} & rotate right    & R \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The \code{clinch} class deliberately groups all \emph{bilateral / symmetric} jaw
+activity (bilateral jaw clench, left/right clench, and bilateral bruxism),
+whereas only \emph{lateralized bruxism} (grinding to one side) drives the
+left/right rotation commands.
+
+% ====================================================================
+\section{Dataset Description}
+% ====================================================================
+\subsection{Acquisition}
+EEG was recorded with a clinical $19$-channel system (10--20 montage, all
+referential ``\code{-Ref}'' channels) at a sampling rate of $200$\,Hz. The
+montage, in acquisition order, is:
+
+\begin{center}\small
+Fp1, Fp2, Fz, F8, F7, F4, F3, C4, C3, O2, P3, Cz, O1, P4, Pz, T6, T5, T4, T3
+\end{center}
+
+\noindent
+Two recording sessions were collected from the same subject:
+\textbf{Session~1} (2026-05-19) and \textbf{Session~2} (2026-06-02). Each gesture
+was recorded as a continuous take of repeated gestures interleaved with rest.
+
+\subsection{Recordings}
+After a data-integrity fix (Section~\ref{sec:step5}), $18$ recordings are usable
+($9$ per session). Table~\ref{tab:recordings} lists them. Note that filenames are
+\emph{inconsistent} across sessions (e.g.\ \code{BLINK-DO}, \code{QUSAITTE},
+\code{CLINCH-L}); the class label is therefore derived from the
+\textbf{folder path} (category folder $+$ side keyword), not the filename.
+
+\begin{table}[h]
+\centering
+\caption{The 18 usable recordings (raw duration before the 40\,s crop).}
+\label{tab:recordings}
+\small
+\begin{tabular}{@{}llllr@{}}
+\toprule
+Session & Class & Folder & File & Dur (s) \\
+\midrule
+S1 & double\_blink  & Double blink          & BLINK02.EDF      & 301 \\
+S1 & single\_blink  & Single Blink          & BLINK01.EDF      & 240 \\
+S1 & triple\_blink  & Multiple blink        & BLINK03.EDF      & 180 \\
+S1 & clinch         & 01-Bilateral bruxisem & BRUXES01.EDF     & 240 \\
+S1 & clinch         & Clinch Left           & GLENCH02.EDF     & 240 \\
+S1 & clinch         & Clinch Bileteral      & GLENCH03.EDF     & 240 \\
+S1 & clinch         & Clinch Right          & GLENCH03.EDF     & 240 \\
+S1 & bruxism\_left  & 02- Bruxesim left     & BRUXES03.EDF     & 180 \\
+S1 & bruxism\_right & 03- Bruxisem RT       & BRUXES02.EDF     & 180 \\
+S2 & double\_blink  & Double Blink          & BLINK-DO.EDF     & 120 \\
+S2 & single\_blink  & Single Blink          & BLINK-SINGLE.EDF & 240 \\
+S2 & triple\_blink  & Triple Blink          & BLINK-TR.EDF     & 180 \\
+S2 & clinch         & Bruxissem Bileteral   & QUSAITTE.EDF     & 180 \\
+S2 & clinch         & Clinch Bileteral      & CLINCH-Both.EDF  & 180 \\
+S2 & clinch         & Clinch Left           & CLINCH-L.EDF     & 180 \\
+S2 & clinch         & Clinch Right          & CLINCH-R.EDF     & 180 \\
+S2 & bruxism\_left  & Bruxissem Left        & QUSAI-LT.EDF     & 120 \\
+S2 & bruxism\_right & Bruxissem Right       & QUSAITTE RT.EDF  & 180 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The ``Random'' test session (excluded)}
+A third recording (\code{RANDOM.EDF}, a mixed-gesture test take) exists with a
+stimulus-marker CSV, but it \textbf{cannot be validly scored}: the clinical EEG
+amplifier and the stimulus laptop ran on \emph{unsynchronised clocks}, the EDF
+contains no event annotations, and amplitude-based burst alignment is
+unreliable. It is therefore excluded from all evaluation, and a within-session
+stratified split is used instead (Section~\ref{sec:method}).
+
+% ====================================================================
+\section{Signal-Processing and Machine-Learning Pipeline}
+% ====================================================================
+All stages are implemented in the \code{eeg\_bci} package
+(\code{loader.py}, \code{preprocessing.py}, \code{features.py},
+\code{train.py}). The pipeline is deterministic (\code{random\_state}~$=42$).
+
+\subsection{Stage 1 --- Discovery and labelling (\code{loader.py})}
+The loader scans every \code{Session*} folder, detects the gesture
+\emph{category} (blink / bruxism / clinch) and \emph{side} (single, double,
+multiple/triple, left, right, bilateral) from path keywords, and maps each
+recording to a canonical stem in \code{LABEL\_MAP}. This makes the labels robust
+to the inconsistent filenames and lets new sessions be added with zero code
+changes.
+
+\subsection{Stage 2 --- Preprocessing (\code{preprocessing.py})}
+For every recording, in order:
+\begin{enumerate}[noitemsep]
+  \item \textbf{Crop}: discard the first $40$\,s (settling / setup).
+  \item \textbf{Notch} filter at $50$\,Hz (mains).
+  \item \textbf{Band-pass} filter $1$--$45$\,Hz.
+  \item \textbf{CAR}: common-average reference (subtract the across-channel mean).
+  \item \textbf{Epoch}: fixed $2.0$\,s windows with $0.5$ (50\%) overlap.
+  \item \textbf{Reject}: drop any epoch whose peak amplitude exceeds $500$\,\muv.
+  \item \textbf{Normalise}: per-recording, per-channel $z$-score, i.e.
+  $\tilde{x}=(x-\mu)/(\sigma+\varepsilon)$.
+\end{enumerate}
+The $z$-score step removes absolute amplitude differences between
+recordings/sessions/electrodes, so features describe the \emph{shape} of the
+gesture rather than the recording's gain. This step is also central to two of
+the experiments below (it destroys absolute \muv{}; see Sections~\ref{sec:step2}
+and~\ref{sec:step4}). After preprocessing the dataset contains
+\textbf{2821 epochs}.
+
+\subsection{Stage 3 --- Feature extraction (\code{features.py})}
+A $93$-dimensional, channel-aware feature vector is extracted per epoch
+(Table~\ref{tab:features}).
+
+\begin{table}[h]
+\centering
+\caption{The 93 features per epoch.}
+\label{tab:features}
+\small
+\begin{tabular}{@{}llr@{}}
+\toprule
+Group & Features per channel & Count \\
+\midrule
+Frontal (Fp1, Fp2) & RMS, ZCR, PTP; rel.\ band power $\delta/\theta/\alpha/\beta/\gamma$; & \multirow{2}{*}{$11\times2=22$}\\
+                   & Hjorth activity/mobility/complexity & \\
+Temporal (T3, T4)  & same 11-feature block & $11\times2=22$ \\
+Asymmetry          & normalised $(T4-T3)/(|T4|+|T3|)$ per feature & $11$ \\
+All 19 channels    & kurtosis $+$ skewness & $19\times2=38$ \\
+\midrule
+\multicolumn{2}{r}{\textbf{Total}} & \textbf{93} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Feature definitions.}
+For a single-channel epoch signal $x[n]$, $n=1\dots N$ (here $N=400$ samples
+$=2$\,s at $200$\,Hz):
+\begin{align*}
+\text{RMS} &= \sqrt{\tfrac1N\textstyle\sum_n x[n]^2}, &
+\text{ZCR} &= \tfrac1N\textstyle\sum_n \mathbb{1}\!\big[\operatorname{sign}x[n]\neq\operatorname{sign}x[n{+}1]\big], &
+\text{PTP} &= \max_n x[n]-\min_n x[n].
+\end{align*}
+The \textbf{relative band power} of band $b\in\{\delta,\theta,\alpha,\beta,\gamma\}$
+uses Welch's PSD $S(f)$:
+\[
+\mathrm{RBP}_b \;=\; \frac{\int_{b}S(f)\,df}{\sum_{b'}\int_{b'}S(f)\,df},
+\qquad
+\delta{:}1\text{--}4,\ \theta{:}4\text{--}8,\ \alpha{:}8\text{--}13,\
+\beta{:}13\text{--}30,\ \gamma{:}30\text{--}45\ \text{Hz}.
+\]
+The three \textbf{Hjorth parameters} (with $x'$ the first difference) and the
+\textbf{asymmetry index} per feature $k$ are
+\[
+\text{Activity}=\operatorname{Var}(x),\quad
+\text{Mobility}=\sqrt{\tfrac{\operatorname{Var}(x')}{\operatorname{Var}(x)}},\quad
+\text{Complexity}=\frac{\text{Mobility}(x')}{\text{Mobility}(x)},\quad
+A_k=\frac{T4_k-T3_k}{|T4_k|+|T3_k|+\varepsilon}.
+\]
+Relative (not absolute) band power, the ratio-based Hjorth mobility/complexity,
+and the per-recording $z$-score together make the features \emph{amplitude-%
+invariant}: they describe the gesture's \emph{shape}, not the recording's gain.
+
+\subsection{Stage 4 --- Classifier pipeline (\code{train.py})}
+Each classifier is wrapped in an \emph{imbalanced-learn} pipeline so that
+oversampling never contaminates the test fold:
+\begin{center}
+\code{StandardScaler} $\rightarrow$ \code{SelectKBest(mutual\_info, k=50)}
+$\rightarrow$ \code{SMOTE} $\rightarrow$ \emph{classifier}.
+\end{center}
+Three classifiers are compared:
+\textbf{RandomForest} ($300$ trees), \textbf{SVC} (RBF kernel), and
+\textbf{LDA} (\code{lsqr}, automatic shrinkage). RandomForest was the best in
+every experiment and is the model reported throughout.
+
+% ====================================================================
+\section{Foundational Design Experiments}
+\label{sec:foundational}
+% ====================================================================
+Before the seven accuracy steps of Section~\ref{sec:journey}, three earlier
+experiments shaped the pipeline itself. They are documented here so the record of
+``everything tried'' is complete.
+
+\subsection{Feature-set redesign: 78 $\to$ 93 amplitude-invariant features}
+The first feature set ($78$ features) included raw per-channel \emph{mean} and
+\emph{standard deviation}. These were found to encode the \emph{recording's
+identity / gain} rather than the gesture, and were removed in favour of
+amplitude-invariant descriptors:
+\begin{itemize}[noitemsep]
+  \item raw mean / std $\to$ \textbf{dropped};
+  \item absolute band power $\to$ \textbf{relative} band power (each band divided
+  by the total), invariant to overall gain;
+  \item added the three \textbf{Hjorth parameters} (activity, mobility,
+  complexity), which capture signal complexity cheaply;
+  \item added the \textbf{T4--T3 asymmetry index} to expose left/right
+  lateralization.
+\end{itemize}
+Together with the per-recording $z$-score (Stage~2), this makes the features
+describe the \emph{shape} of the gesture rather than its raw amplitude. The
+result is the $93$-feature vector used throughout (Table~\ref{tab:features}).
+
+\subsection{Lateralization features for the clinch$\leftrightarrow$bruxism
+confusion (rejected)}
+Because lateralized bruxism was repeatedly confused with clinch, three additional
+lateralization features were tried (\code{feature\_fix\_experiment.py}), staged
+cumulatively and evaluated \emph{cross-session} (train Session~1, test
+Session~2):
+\begin{itemize}[noitemsep]
+  \item \textbf{Fix 1}: T4/T3 ratio and normalized-difference asymmetry features;
+  \item \textbf{Fix 2}: drop the amplitude-carrying RMS from the temporal blocks;
+  \item \textbf{Fix 3}: a discrete right/left/symmetric lateral index.
+\end{itemize}
+\textbf{Result: rejected.} Every variant \emph{hurt} \code{bruxism\_right}
+(\fone{} $0.33 \rightarrow 0.23$--$0.26$) instead of helping, so the baseline
+$93$-feature set (all flags off) was kept. The toggles remain in
+\code{features.py} for reproducibility.
+
+\subsection{Cross-validation leakage: random $K$-fold vs grouped CV}
+An early random $K$-fold cross-validation reported $\sim$0.80 accuracy --- but
+this was \textbf{leakage}: with $0.5$-overlap epochs, near-duplicate windows from
+one recording landed in both train and test. Switching to
+\code{StratifiedGroupKFold} (all epochs of a recording kept together) revealed the
+true grouped accuracy was only $\sim$0.45. This established the project's
+evaluation discipline: \emph{group-aware} CV and a leakage-free cross-session
+number ($65\%$, the conservative figure), alongside the within-session stratified
+split used for the headline (with its overlap caveat stated explicitly,
+Section~\ref{sec:method}).
+
+\subsection{Complete index of approaches tried}
+Table~\ref{tab:index} lists \emph{every} approach in this project --- foundational
+and the seven accuracy steps --- with its outcome, so nothing is omitted.
+
+\begin{table}[h]
+\centering
+\caption{Complete index of approaches tried (A\,=\,adopted, R\,=\,rejected).}
+\label{tab:index}
+\small
+\begin{tabular}{@{}llcl@{}}
+\toprule
+\# & Approach & Status & Note / location \\
+\midrule
+F1 & Relative band power $+$ Hjorth $+$ T4--T3 asymmetry (78$\to$93) & A & feature redesign \\
+F2 & Per-recording $z$-score normalization & A & \code{preprocessing.py} \\
+F3 & Lateralization fixes (T4/T3 ratio, drop-RMS, lateral index) & R & hurt bruxism\_right \\
+F4 & \code{StratifiedGroupKFold} (anti-leakage CV) & A & exposed 0.80$\to$0.45 leak \\
+F5 & SMOTE oversampling; SelectKBest($k{=}50$); 3-classifier compare & A & training pipeline \\
+1  & Stratified 80/20 split (5-class) & A & 80.4\% \\
+2  & Blink peak/timing count on $z$-scored signal & R & normalization artifact \\
+3  & \textbf{Label scheme 5$\to$6 classes (pure blink classes)} & A & \textbf{83.4\%} \\
+4  & Blink peak/timing count on raw \muv{} (8 features) & R & noise-level gain \\
+5  & Data ``Bileteral'' fix ($+$5-seed reporting) & A & recovered 2 recordings \\
+6  & Physiological augmentation (jitter/scale/shift/warp) & R & $-1.1\%$ \\
+7  & \textbf{Activity-gated epoching} & A & \textbf{85.2\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ====================================================================
+\section{Evaluation Methodology}
+\label{sec:method}
+% ====================================================================
+Because the system is single-subject, the evaluation target is per-session
+generalization. The primary metric is a \textbf{stratified random 80/20 split}
+of the pooled Session~1$+$2 epochs, training on $80\%$ and testing on $20\%$,
+with \code{random\_state}\,$=42$. Metrics reported are overall accuracy,
+per-class \fone{}, macro-\fone{}, and the confusion matrix.
+
+\paragraph{Honesty caveats.}
+Two points are stated openly throughout:
+\begin{itemize}[noitemsep]
+  \item \textbf{Overlap.} With $0.5$-overlap epochs, adjacent windows share
+  $\sim$50\% of their samples, so a random split places near-duplicate windows in
+  train and test. This is why the within-session number exceeds the harder
+  cross-session number.
+  \item \textbf{Split variance.} On this small, correlated dataset a single split
+  has $\sim$1.5\% accuracy variance (Section~\ref{sec:step5}); later experiments
+  therefore report the \emph{mean over five seeds}.
+\end{itemize}
+
+% ====================================================================
+\section{The Accuracy-Improvement Journey}
+\label{sec:journey}
+% ====================================================================
+Table~\ref{tab:journey} summarises the seven steps; each is detailed below.
+
+\begin{table}[h]
+\centering
+\caption{Accuracy progression. ``Rejected'' steps were tested and discarded; they
+informed the final design.}
+\label{tab:journey}
+\small
+\begin{tabular}{@{}clccll@{}}
+\toprule
+Step & Change & Classes & Eval & Accuracy & Macro-\fone{} \\
+\midrule
+-- & Prior baseline: cross-session S1$\to$S2 & 5 & LDA & 65.0\% & 0.53 \\
+1 & Stratified 80/20 split & 5 & RF & 80.4\% & 0.728 \\
+2 & Blink peak-count on $z$-scored signal & 5 & --- & \textcolor{bad}{rejected} & --- \\
+3 & \textbf{Label scheme 5\,$\to$\,6 classes} & 6 & RF & 83.4\%$^\dagger$ & 0.778 \\
+4 & Blink peak-count on raw \muv{} & 6 & RF & \textcolor{bad}{82.8\%} & rejected \\
+5 & Data-bug fix $+$ 5-seed reporting & 6 & RF & 82.1\%$\pm$1.6\% & 0.761 \\
+6 & Physiological augmentation & 6 & RF & \textcolor{bad}{80.9\%} & rejected \\
+7 & \textbf{Activity-gated epoching} & 6 & RF & \textbf{85.2\%} & \textbf{0.818} \\
+\bottomrule
+\end{tabular}
+\end{table}
+{\footnotesize $^\dagger$ The $83.4\%$ was a single seed-42 split taken before the
+data-bug fix re-ordered the recordings; the honest multi-seed ungated baseline on
+the corrected data is $82.1\pm1.6\%$ (Step~5).}
+
+% --------------------------------------------------------------------
+\subsection{Step 1 --- Stratified 80/20 split (5-class baseline)}
+% --------------------------------------------------------------------
+\textbf{Motivation.} Establish a single, defensible within-session number for the
+single-subject use case, replacing the harder cross-session protocol.
+
+\textbf{Method / tools.} \code{eval\_stratified.py}: pool all Session~1$+$2
+epochs, stratified $80/20$ split (\code{train\_test\_split},
+\code{random\_state}=42), fit all three classifiers, report the best (RandomForest).
+
+\textbf{Result.} Overall accuracy $\mathbf{80.4\%}$, macro-\fone{} $0.728$.
+
+\begin{table}[h]\centering\small
+\caption{Step 1 --- 5-class per-class \fone{} and confusion matrix (RandomForest).}
+\begin{minipage}{0.40\textwidth}\centering
+\begin{tabular}{@{}llc@{}}
+\toprule
+& Class & \fone{} \\\midrule
+S & double\_blink  & 0.647 \\
+O & single\_blink  & 0.818 \\
+C & clinch         & 0.882 \\
+L & bruxism\_left  & 0.609 \\
+R & bruxism\_right & 0.686 \\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}{0.55\textwidth}\centering
+\begin{tabular}{@{}c|ccccc@{}}
+\multicolumn{6}{c}{\footnotesize rows = GT, cols = Pred}\\
+\toprule
+ & S & O & C & L & R \\\midrule
+S & 43 & 24 &  1 &  0 &  0 \\
+O & 18 &112 &  3 &  0 &  0 \\
+C &  2 &  4 &242 &  5 & 13 \\
+L &  2 &  1 & 18 & 21 &  1 \\
+R &  0 &  0 & 19 &  0 & 36 \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{table}
+
+\noindent
+\textbf{Reading.} The dominant errors are blink S$\leftrightarrow$O confusion and
+both bruxism classes leaking into clinch --- the seeds of every later experiment.
+
+% --------------------------------------------------------------------
+\subsection{Step 2 --- Blink peak counting on the $z$-scored signal (rejected)}
+\label{sec:step2}
+% --------------------------------------------------------------------
+\textbf{The creative idea.} The blink classes differ not in \emph{how big} a
+single window is, but in \emph{how many} discrete blinks it contains and
+\emph{how they are spaced in time}: a single blink is one sharp frontal
+deflection, a double blink is \emph{two} deflections separated by a short gap
+($\sim$200--400\,ms), and a triple is \emph{three}. The natural way to decode this
+is therefore not amplitude but \textbf{event counting and timing}: detect the
+individual blink peaks on Fp1/Fp2 and describe (i) their \emph{consecutive count}
+and (ii) the \emph{inter-peak interval} (IPI) and its regularity. This is a
+biologically grounded, time-domain idea rather than a spectral/statistical one.
+
+\textbf{Hypothesis.} Single vs.\ double blink should be separable by
+\emph{counting} blink peaks on the frontal channels Fp1/Fp2 (1 peak vs.\ 2) and
+by their timing, rather than by amplitude inside the window.
+
+\textbf{Method / tools.} \code{scipy.signal.find\_peaks} on the frontal signal;
+features \code{blink\_n\_peaks} (the consecutive count) and
+\code{blink\_ipi\_mean/min/std} (the timing/rhythm between peaks). A
+\emph{validation gate} (\code{blink\_peak\_viz.py}) printed the mean peak count
+per class \emph{before} any retraining.
+
+\textbf{Result (validation).} On the $z$-scored signal the counts were
+nonsensical (Table~\ref{tab:step2val}, left): \code{bruxism\_left} showed
+\emph{more} peaks ($1.12$) than blinks, and
+\code{double\_blink}~($0.76$)~$\approx$~\code{single\_blink}~($0.73$). A
+microvolt-domain diagnostic (Table~\ref{tab:step2val}, right) showed the right
+\emph{muscle-vs-blink} trend (blinks $\sim$180--200\,\muv{} PTP vs muscle
+$\sim$88\,\muv) but \emph{still} no single-vs-double separation ($0.79$ vs
+$0.82$).
+
+\begin{table}[h]\centering\small
+\caption{Step 2 validation. Left: mean peaks per class on the $z$-scored signal
+(thresholds in SD-units). Right: the same in raw \muv{} (height $50$, prominence
+$30$\,\muv).}
+\label{tab:step2val}
+\begin{minipage}{0.46\textwidth}\centering
+\textit{z-scored (broken)}\\[2pt]
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Class & Fp1 & Fp2 \\\midrule
+double\_blink  & 0.76 & 0.76 \\
+single\_blink  & 0.72 & 0.73 \\
+clinch         & 0.70 & 0.61 \\
+bruxism\_left  & \textbf{1.12} & 0.55 \\
+bruxism\_right & 0.43 & \textbf{1.02} \\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}{0.50\textwidth}\centering
+\textit{raw \muv{} (diagnostic)}\\[2pt]
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Class & peaks & PTP \muv \\\midrule
+double\_blink  & 0.79 & 179 \\
+single\_blink  & 0.82 & 203 \\
+clinch         & 0.38 & 88 \\
+bruxism\_left  & 0.46 & 88 \\
+bruxism\_right & 0.42 & 94 \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{table}
+
+\textbf{Diagnosis \& decision.} \textbf{Rejected at the gate.} Per-recording
+$z$-scoring rescales every recording to unit variance, so spiky jaw-muscle EMG
+produces as many threshold crossings as blinks --- the absolute-amplitude
+information that distinguishes a blink was \emph{normalised away}. A
+microvolt-domain diagnostic (\code{blink\_peak\_diag.py}) confirmed the
+muscle-vs-blink contrast is real in \muv{} but that single vs.\ double still did
+not separate, partly because the 5-class \code{single\_blink} label pooled both
+single \emph{and} multiple blinks. \emph{Key takeaway: any amplitude/peak feature
+must run on the un-normalised \muv{} signal, and the blink labels need
+splitting.} Both feed Steps~3 and~4.
+
+% --------------------------------------------------------------------
+\subsection{Step 3 --- Six-class label scheme (the first big win)}
+\label{sec:step3}
+% --------------------------------------------------------------------
+\textbf{Motivation.} In the 5-class scheme, \code{BLINK01} (single) and
+\code{BLINK03} (multiple) were both label~1, so the model could not separate
+``double'' from a mixed ``single$+$multiple'' bucket --- the root cause of
+S$\leftrightarrow$O confusion.
+
+\textbf{Method / tools.} In \code{config.py}, split \code{BLINK03} into its own
+class \code{triple\_blink} (label~2) and re-index to six pure classes
+(Section~1). Retrain on the same $80/20$ split (\code{eval\_6class.py}).
+
+\textbf{Result.} Overall $\mathbf{83.4\%}$, macro-\fone{} $0.778$. Every retained
+class improved (Table~\ref{tab:step3}).
+
+\begin{table}[h]\centering\small
+\caption{Step 3 --- 5-class vs 6-class per-class \fone{} (same split, RandomForest).}
+\label{tab:step3}
+\begin{minipage}{0.52\textwidth}\centering
+\begin{tabular}{@{}llccc@{}}
+\toprule
+& Class & 5-cls & 6-cls & $\Delta$ \\\midrule
+S & double\_blink  & 0.647 & 0.652 & \up{0.005} \\
+O & single\_blink  & 0.818 & 0.885 & \up{0.067} \\
+T & triple\_blink  & ---   & 0.721 & (new) \\
+C & clinch         & 0.882 & 0.916 & \up{0.034} \\
+L & bruxism\_left  & 0.609 & 0.737 & \up{0.128} \\
+R & bruxism\_right & 0.686 & 0.755 & \up{0.069} \\\midrule
+\multicolumn{2}{r}{Overall} & 80.4\% & 83.4\% & \up{3.0\%} \\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}{0.45\textwidth}\centering
+\begin{tabular}{@{}c|cccccc@{}}
+\multicolumn{7}{c}{\footnotesize rows = GT, cols = Pred}\\
+\toprule
+ & S & O & T & C & L & R \\\midrule
+S &44 & 8 &15 & 1 & 0 & 0 \\
+O & 5 &73 & 0 & 0 & 0 & 0 \\
+T &13 & 2 &40 & 0 & 0 & 0 \\
+C & 1 & 4 & 1 &246& 4 &10 \\
+L & 4 & 0 & 0 &10 &28 & 1 \\
+R & 0 & 0 & 0 &14 & 1 &40 \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{table}
+
+\noindent
+\textbf{Reading.} Splitting the blink class purified \code{single\_blink}
+(\up{0.067}) and, as a bonus, reduced blink bleed into the muscle classes
+(\code{bruxism\_left} \up{0.128}). The new bottleneck is S$\leftrightarrow$T
+(double vs.\ triple blink). Per-class epoch counts after the split:
+S\,337, O\,390, T\,276, C\,1328, L\,216, R\,274 (total $2821$).
+
+% --------------------------------------------------------------------
+\subsection{Step 4 --- Blink peak counting on raw \muv{} (rejected)}
+\label{sec:step4}
+% --------------------------------------------------------------------
+\textbf{Hypothesis (revisited).} With six \emph{pure} classes (so
+single/double/triple are no longer mixed) and detection in the correct \muv{}
+domain (so amplitude survives), \textbf{counting consecutive blink peaks and
+measuring their timing} should now separate single ($\approx$1 peak),
+double ($\approx$2 peaks $\sim$300--400\,ms apart) and triple ($\approx$3 peaks).
+
+\textbf{Method / tools.} The un-normalised \muv{} epochs were threaded through
+the pipeline via a new dual-output preprocessing path
+(\code{preprocess\_all\_dual}, which returns both the $z$-scored and the raw-\muv{}
+epoch), and \textbf{eight} timing/count features were added,
+\code{fp1/fp2}\,$\times$\,\{\,\code{n\_peaks},\,\code{ipi\_mean},\,\code{ipi\_std},\,\code{peak\_amp\_mean}\,\}:
+\begin{itemize}[noitemsep]
+  \item \code{n\_peaks} --- the \textbf{consecutive number} of blink deflections
+  (the ``1 vs 2 vs 3'' signal);
+  \item \code{ipi\_mean}, \code{ipi\_std} --- the mean and regularity of the
+  \textbf{inter-peak interval} (the rhythm / timing between consecutive blinks);
+  \item \code{peak\_amp\_mean} --- the mean detected-peak amplitude.
+\end{itemize}
+Peaks were detected with \code{find\_peaks} on $|\text{signal}|$ (height
+$40$\,\muv, prominence $25$\,\muv, minimum distance $200$\,ms; absolute value
+because many blinks are negative-going under CAR). A validation gate
+(\code{blink\_peak\_v2\_viz.py}) checked the per-class counts before retraining.
+
+\textbf{Result (validation).} The ordering was now \emph{clean and monotonic} ---
+peak count, inter-peak interval \emph{and} peak amplitude all increase
+single\,$<$\,double\,$<$\,triple (Table~\ref{tab:step4}, left). The absolute
+counts are $\sim$half the idealised $1/2/3$ because the $2$\,s sliding windows
+include rest periods (a foreshadowing of Step~7).
+
+\begin{table}[h]\centering\small
+\caption{Step 4. Left: validation --- mean blink-peak count, IPI and amplitude per
+class on raw \muv{} ($|$signal$|$, height $40$, prom $25$\,\muv, dist $200$\,ms).
+Right: the eight peak features as classifier features (6-class RF, same split).}
+\label{tab:step4}
+\begin{minipage}{0.52\textwidth}\centering
+\textit{validation (clean ordering)}\\[2pt]
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Class & $n$ peaks & IPI (s) & amp \muv \\\midrule
+single\_blink  & 0.44 & 0.024 & 94.6 \\
+double\_blink  & 0.83 & 0.170 & 100.5 \\
+triple\_blink  & 1.41 & 0.293 & 138.8 \\
+clinch         & 0.46 & 0.076 & 36.6 \\
+bruxism\_left  & 0.66 & 0.187 & 36.2 \\
+bruxism\_right & 0.58 & 0.110 & 39.3 \\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}{0.45\textwidth}\centering
+\textit{retrain \fone{} (no gain)}\\[2pt]
+\begin{tabular}{@{}lccc@{}}
+\toprule
+& base & $+$peak & $\Delta$ \\\midrule
+S & 0.652 & 0.676 & \up{0.024} \\
+O & 0.885 & 0.892 & \up{0.007} \\
+T & 0.721 & 0.729 & \up{0.008} \\
+C & 0.916 & 0.902 & \down{0.014} \\
+L & 0.737 & 0.727 & \down{0.010} \\
+R & 0.755 & 0.732 & \down{0.023} \\\midrule
+Acc & 83.4\% & 82.8\% & \down{0.6\%} \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{table}
+
+\textbf{Result (retrain) \& decision.} \textbf{Rejected.} As classifier features
+the eight peaks gave only noise-level gains on the target classes
+(S~\up{0.024}, T~\up{0.008} on $55$--$68$ test epochs), slightly hurt the muscle
+classes, and dropped overall $83.4\%\rightarrow82.8\%$ (Table~\ref{tab:step4},
+right); the S$\leftrightarrow$T confusion did not move. The existing $93$ features (frontal
+kurtosis/skew/PTP/band-power) already encode multi-peak blink shape, so an
+explicit count is redundant. \emph{Lesson: a feature that orders classes cleanly
+in isolation is not necessarily additive once correlated features exist.} The
+feature code is retained as a disabled toggle.
+
+\textbf{But the idea was not wasted.} The validation produced a crucial
+by-product: each $2$\,s window contains only $\sim$\emph{half} a blink on average,
+because so many windows fall on the \emph{rest} period between blinks. That single
+observation --- that a large fraction of windows contain no gesture at all ---
+directly motivated the \textbf{activity-gating} method that became the decisive
+win (Section~\ref{sec:step7}). The blink-timing experiment thus failed as a
+feature but succeeded as the clue that solved the real problem.
+
+% --------------------------------------------------------------------
+\subsection{Step 5 --- Data-integrity fix and split-variance finding}
+\label{sec:step5}
+% --------------------------------------------------------------------
+\textbf{Trigger.} A re-check of the raw files (prompted by a suspicion of a
+naming mismatch) revealed that a folder reorganization had renamed the bilateral
+folders to the \emph{misspelling} ``\code{Bileteral}''. The loader's side
+detector only recognised ``\code{bilateral}''/``\code{both}'', so it
+\textbf{silently dropped 2 of the 18 recordings} (a bilateral clinch and a
+bilateral bruxism). Only $16$ recordings ($2495$ epochs) were being used; clinch
+had fallen from $1328$ to $1002$ epochs.
+
+\textbf{Fix / tools.} \code{loader.py}: made \code{\_detect\_side} robust to the
+misspellings (\code{bileteral}, \code{bilatral}, \code{bilat}) and to the word
+``\code{triple}''. All $18$ recordings / $2821$ epochs load again.
+
+\textbf{Secondary finding.} Re-running gave $81.8\%$ for the seed-42 split rather
+than the earlier $83.4\%$, on \emph{identical data}. The cause is pure
+\textbf{split variance}: renaming changed the recording-discovery order, hence
+the seed-42 test draw. The single-split number therefore carries $\sim$1.5\%
+noise, so from here on results are reported as the \textbf{mean over five seeds}
+$\{42,1,7,123,2024\}$.
+
+\textbf{Corrected honest baseline.} $\mathbf{82.1\% \pm 1.6\%}$ accuracy,
+macro-\fone{} $0.761$ (ungated, six classes, RandomForest).
+
+% --------------------------------------------------------------------
+\subsection{Step 6 --- Physiological data augmentation (rejected)}
+% --------------------------------------------------------------------
+\textbf{Hypothesis.} The real shortage is \emph{independent recordings}
+($\sim$2 per minority class). Synthesising ``extra sessions'' from each epoch ---
+by simulating the nuisance factors a real BCI must survive --- might regularise
+the model.
+
+\textbf{Method / tools.} \code{augment.py}: label-preserving transforms applied
+to \emph{training epochs only} (so the test set stays real):
+additive Gaussian jitter ($\sigma=0.08$), global gain scaling
+($0.85$--$1.15$), temporal shift ($\pm0.10$\,s), and smooth magnitude warping
+($4$ knots, $\sigma=0.12$); $n_{\text{aug}}=3$ variants per epoch.
+\code{eval\_augmented.py} evaluated over five seeds.
+
+\textbf{Result \& decision.} \textbf{Rejected.} Accuracy fell
+$82.1\%\rightarrow80.9\%$ and macro-\fone{} $0.761\rightarrow0.733$, consistently
+across all five seeds (Table~\ref{tab:step6}, left) and across almost all classes
+(right; worst on \code{bruxism\_left}, \down{0.072}). Perturbing
+already-plentiful, overlapping, SMOTE-resampled epochs adds variants
+\emph{correlated} with the originals; it cannot supply the missing
+between-recording variability and only blurs the class boundaries.
+\emph{Lesson: more epochs $\neq$ more information.}
+
+\begin{table}[h]\centering\small
+\caption{Step 6 augmentation (\fone{}/accuracy as mean over 5 seeds, train-only
+augmentation, real test).}
+\label{tab:step6}
+\begin{minipage}{0.46\textwidth}\centering
+\textit{per-seed accuracy}\\[2pt]
+\begin{tabular}{@{}cccc@{}}
+\toprule
+Seed & Base & Aug & $\Delta$ \\\midrule
+42   & 81.8 & 80.4 & \down{1.4} \\
+1    & 80.5 & 80.7 & \up{0.2} \\
+7    & 81.4 & 79.3 & \down{2.1} \\
+123  & 85.1 & 83.2 & \down{1.9} \\
+2024 & 81.4 & 81.1 & \down{0.3} \\\midrule
+mean & 82.1 & 80.9 & \down{1.1} \\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}{0.50\textwidth}\centering
+\textit{per-class \fone{} (mean/5)}\\[2pt]
+\begin{tabular}{@{}lccc@{}}
+\toprule
+& base & aug & $\Delta$ \\\midrule
+S double  & 0.665 & 0.623 & \down{0.042} \\
+O single  & 0.899 & 0.886 & \down{0.013} \\
+T triple  & 0.697 & 0.649 & \down{0.048} \\
+C clinch  & 0.898 & 0.899 & $+0.000$ \\
+L brux\_L & 0.671 & 0.599 & \down{0.072} \\
+R brux\_R & 0.733 & 0.742 & \up{0.009} \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{table}
+
+% --------------------------------------------------------------------
+\subsection{Step 7 --- Activity-gated epoching (the decisive win)}
+\label{sec:step7}
+% --------------------------------------------------------------------
+\textbf{Insight.} The recordings are gesture-then-rest sequences, but the
+sliding-window epoching labels \emph{every} $2$\,s window --- including the rest
+windows between gestures --- with the recording's class. A rest window from the
+double-blink file is then \emph{identical} to a rest window from the triple-blink
+file, yet carries a different label. This is \textbf{label noise} that directly
+caps S$\leftrightarrow$T and the muscle confusions.
+
+\textbf{Validation.} Scoring each epoch by the peak-to-peak amplitude of its
+gesture-relevant channels showed that \textbf{$\sim$48\% of all epochs are rest}
+(low activity), with a large spread between the $25$th and $75$th activity
+percentiles within a class --- confirming the noise (Table~\ref{tab:step7val}).
+
+\begin{table}[h]\centering\small
+\caption{Step 7 validation --- per-class relevant-channel PTP (\muv) and the
+fraction dropped as rest at frac $=0.5$.}
+\label{tab:step7val}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Class & median \muv & p25 & p75 & dropped (rest) \\
+\midrule
+double\_blink  & 164 & 56  & 312 & 50\% \\
+single\_blink  & 133 & 39  & 347 & 57\% \\
+triple\_blink  & 284 & 132 & 321 & 29\% \\
+clinch         & 115 & 44  & 181 & 51\% \\
+bruxism\_left  & 173 & 85  & 253 & 46\% \\
+bruxism\_right & 220 & 108 & 302 & 38\% \\
+\midrule
+\multicolumn{4}{r}{Overall kept $1471/2821$} & 48\% rest \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Method / tools.} \code{activity\_gate.py}. For epoch $i$ with label
+$y_i$, define the activity on the relevant channel set $C(y_i)$ (frontal
+Fp1/Fp2 for blinks; temporal T3/T4 for jaw gestures):
+\[
+a_i \;=\; \max_{c\,\in\,C(y_i)}\Big(\max_t x^{\mu V}_{i,c,t}-\min_t x^{\mu V}_{i,c,t}\Big),
+\]
+and keep epoch $i$ iff
+\[
+a_i \;\ge\; \text{frac}\,\cdot\, Q_{0.9}\big(\{a_j : g_j = g_i\}\big),
+\]
+where $Q_{0.9}$ is the $90$th percentile of activity \emph{within the same
+recording} $g_i$ (recording-relative, so the threshold tracks each gesture's own
+amplitude). \code{eval\_gated.py} extracts features once, then sweeps
+$\text{frac}\in\{0.4,0.5,0.6\}$ over five seeds.
+
+\textbf{Honest framing.} Gating is applied to \emph{both} train and test, which
+redefines the task from ``classify every window'' to ``classify
+\emph{gesture-present} windows''. This is exactly the real deployment task --- a
+controller fires a command only on an active window, never during rest --- but it
+is a cleaner test set than the ungated baseline, so the two numbers are reported
+side by side.
+
+\textbf{Result.} At $\text{frac}=0.5$ (keeps $52\%$ of epochs):
+overall $\mathbf{85.2\%}$, macro-\fone{} $\mathbf{0.818}$ ---
+\up{3.1\%} accuracy, \up{0.057} macro-\fone{}. The result is \emph{robust} across
+the threshold sweep, so it is not a cherry-picked knob:
+
+\begin{center}\small
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+frac & kept epochs & kept \% & accuracy & macro-\fone{} \\
+\midrule
+(ungated) & 2821 & 100\% & 82.1\% & 0.761 \\
+0.4 & 1680 & 60\% & 84.4\% & 0.808 \\
+\textbf{0.5} & \textbf{1471} & \textbf{52\%} & \textbf{85.2\%} & \textbf{0.818} \\
+0.6 & 1234 & 44\% & 84.5\% & 0.814 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{table}[h]\centering\small
+\caption{Step 7 --- ungated vs activity-gated (frac $=0.5$), 6-class RandomForest,
+mean over 5 splits.}
+\label{tab:step7}
+\begin{minipage}{0.52\textwidth}\centering
+\begin{tabular}{@{}llccc@{}}
+\toprule
+& Class & Ungated & Gated & $\Delta$ \\\midrule
+S & double\_blink  & 0.665 & 0.700 & \up{0.036} \\
+O & single\_blink  & 0.899 & 0.889 & \down{0.010} \\
+T & triple\_blink  & 0.697 & 0.789 & \up{0.092} \\
+C & clinch         & 0.898 & 0.913 & \up{0.014} \\
+L & bruxism\_left  & 0.671 & 0.788 & \up{0.117} \\
+R & bruxism\_right & 0.733 & 0.826 & \up{0.093} \\\midrule
+\multicolumn{2}{r}{Accuracy} & 82.1\% & 85.2\% & \up{3.1\%} \\
+\multicolumn{2}{r}{Macro-\fone{}} & 0.761 & 0.818 & \up{0.057} \\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}{0.45\textwidth}\centering
+\begin{tabular}{@{}c|cccccc@{}}
+\multicolumn{7}{c}{\footnotesize gated, seed 42; rows=GT}\\
+\toprule
+ & S & O & T & C & L & R \\\midrule
+S &22 & 3 & 8 & 0 & 0 & 0 \\
+O & 2 &32 & 0 & 0 & 0 & 0 \\
+T & 6 & 3 &31 & 0 & 0 & 0 \\
+C & 2 & 0 & 0 &119& 5 & 5 \\
+L & 0 & 0 & 0 & 2 &21 & 0 \\
+R & 0 & 0 & 0 & 6 & 0 &28 \\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{table}
+
+\noindent
+\textbf{Reading.} The largest gains land precisely on the classes that were
+drowning in rest-window noise: \code{bruxism\_left} \up{0.117},
+\code{triple\_blink} \up{0.092}, \code{bruxism\_right} \up{0.093}. Removing the
+mislabelled rest windows let the model actually learn each gesture.
+
+% ====================================================================
+\section{Final Model and Deployment Considerations}
+% ====================================================================
+The recommended model is the six-class RandomForest trained on
+activity-gated epochs (saved as \code{models/best\_model\_gated.pkl}); the
+ungated model is kept at \code{models/best\_model.pkl} for the
+classify-every-window task.
+
+\textbf{Inference requirement.} The real-time path \emph{must apply the same
+activity gate} before predicting: compute the relevant-channel \muv{} PTP of each
+sliding window and only classify windows above the recording-relative threshold;
+otherwise output ``rest''. This mirrors the gated training task and matches the
+finite-state-machine behaviour a prosthetic controller needs (fire only on a
+confident, active window).
+
+% ====================================================================
+\section{Methodological Lessons}
+% ====================================================================
+\begin{enumerate}[noitemsep]
+  \item \textbf{Validate features before retraining.} Cheap per-class diagnostics
+  (Steps~2,~4,~7) prevented two dead-end retrains and motivated the winning one.
+  \item \textbf{Mind the normalisation domain.} Per-recording $z$-scoring removes
+  absolute \muv{}; amplitude/peak features must use the raw \muv{} signal
+  (Step~2 vs.\ Step~4).
+  \item \textbf{Report split variance.} A single small-data split carries
+  $\sim$1.5\% noise; use the mean over several seeds (Step~5).
+  \item \textbf{Clean labels beat more data.} Fixing label noise (Steps~3,~7)
+  helped far more than synthesising data (Step~6).
+  \item \textbf{Report rejected experiments.} They are part of the evidence and
+  justify the final design.
+\end{enumerate}
+
+% ====================================================================
+\section{Conclusion and Future Work}
+% ====================================================================
+Through label-scheme purification (5\,$\to$\,6 classes), a data-integrity fix,
+and activity-gated epoching, the within-session accuracy improved from a $65\%$
+cross-session baseline to \textbf{85.2\%} (macro-\fone{} $0.818$) on the
+deployment-relevant gesture-present-window task, with the largest gains on the
+previously weakest classes. Several attractive-sounding ideas --- blink
+peak/timing counting, lateralization features, and signal augmentation --- were
+tested and rejected on the evidence; one of them (blink timing) nonetheless
+produced the observation that led to the winning method.
+
+\paragraph{Future work.}
+(i) Build \code{inference.py} with the activity gate and the command
+finite-state machine; (ii) collect additional \emph{independent} recordings per
+minority class to attack the true data bottleneck; (iii) record EEG and stimulus
+on a single clock so the held-out mixed-gesture session becomes scorable;
+(iv) revisit the S$\leftrightarrow$T boundary with event-locked (rather than
+sliding) epoching now that rest windows are removed.
+
+% ====================================================================
+\appendix
+\section{Key Configuration Parameters (\code{config.py})}
+% ====================================================================
+\begin{lstlisting}
+SFREQ        = 200          # Hz
+CROP_SECONDS = 40           # discard first 40 s
+NOTCH_HZ     = 50.0         # mains notch
+BANDPASS_HZ  = (1.0, 45.0)  # band-pass cutoffs (Hz)
+EPOCH_SEC    = 2.0          # epoch length (s)
+EPOCH_OVERLAP= 0.5          # 50% overlap
+REJECT_UV    = 500          # reject epoch if any channel > 500 uV
+SELECT_K     = 50           # SelectKBest features kept
+CV_FOLDS     = 5
+RANDOM_STATE = 42
+BANDS = {delta:1-4, theta:4-8, alpha:8-13, beta:13-30, gamma:30-45}  # Hz
+\end{lstlisting}
+
+\section{Source Files (\code{eeg\_bci} package)}
+\begin{center}\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+File & Role \\\midrule
+\code{config.py}          & all parameters, label \& command maps \\
+\code{loader.py}          & discovery + folder-based labelling \\
+\code{preprocessing.py}   & filtering, epoching, $z$-score, dual \muv{} output \\
+\code{features.py}        & 93-feature extraction ($+$ optional blink peaks) \\
+\code{train.py}           & classifier pipelines, model selection \\
+\code{eval\_stratified.py}& Step 1 (5-class stratified split) \\
+\code{eval\_6class.py}    & Step 3 (6-class) \\
+\code{blink\_peak\_*.py}  & Steps 2 \& 4 validation/diagnostics \\
+\code{augment.py}, \code{eval\_augmented.py} & Step 6 (augmentation) \\
+\code{activity\_gate.py}, \code{eval\_gated.py} & Step 7 (activity gating) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}

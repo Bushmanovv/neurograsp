@@ -1,0 +1,25 @@
+# Pinned to the versions the model pickles in models/ were WRITTEN with.
+#
+# The pins are not superstition: a .pkl carries pickled scikit-learn estimator
+# objects, so loading one under a different scikit-learn raises
+# InconsistentVersionWarning at best and fails to unpickle at worst. Retrain or
+# re-export the models and you must re-pin these to whatever produced them.
+#
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+#
+# This is the same set as ../raspberry-pi/requirements-pi.txt, which carries the
+# extra notes that matter on a Pi (aarch64 wheels, long tslearn build).
+
+numpy==2.4.4
+scipy==1.17.1
+scikit-learn==1.8.0
+imbalanced-learn==0.14.1
+joblib==1.5.3
+mne==1.12.0
+pyriemann==0.11
+PyWavelets
+tslearn==0.8.1
+
+# The UART link to the ESP32 hand (Contract A). inference.py imports it lazily,
+# so --no-serial works without it.
+pyserial
