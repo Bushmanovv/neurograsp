@@ -1,0 +1,29 @@
+# What the Pi needs to run the classifier. Pinned to the versions the model
+# pickles in models/ were WRITTEN with, on this laptop.
+#
+# The pins are not superstition: a .pkl carries the pickled sklearn estimator
+# objects, so loading it under a different scikit-learn raises
+# InconsistentVersionWarning at best and fails to unpickle at worst. If you
+# retrain on the Pi, or re-export the models, re-pin these to whatever produced
+# them.
+#
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements-pi.txt
+#
+# All of these publish aarch64 wheels, so nothing should compile from source on a
+# 64-bit Raspberry Pi OS. Check with `uname -m` -> aarch64. On 32-bit (armv7l)
+# there are no wheels for most of these and you will be building for an hour --
+# reflash with the 64-bit image instead.
+
+numpy==2.4.4
+scipy==1.17.1
+scikit-learn==1.8.0
+imbalanced-learn==0.14.1
+joblib==1.5.3
+mne==1.12.0
+pyriemann==0.11
+PyWavelets
+tslearn==0.8.1
+
+# The UART link to the ESP32 hand (Contract A). inference.py imports it lazily,
+# so --no-serial works without it -- but the deployed service needs it.
+pyserial
