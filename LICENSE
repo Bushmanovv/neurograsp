@@ -1,0 +1,46 @@
+MIT License
+
+Copyright (c) 2026 Karim Dwikat
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY CONTENT — NOT COVERED BY THE MIT LICENSE ABOVE
+
+hardware/3d-print/
+    The InMoov hand and forearm STL files are the work of Gaël Langevin
+    (https://inmoov.fr/) and are licensed Creative Commons
+    Attribution-NonCommercial 3.0 Unported (CC BY-NC 3.0). They are
+    redistributed here under those terms, unmodified except for the print
+    arrangement documented in the build checklist. Commercial use requires
+    permission from the original author.
+
+    The i2 hand revision and the Thingiverse "Hand robot InMoov" derivative
+    (thing 17773) carry their own upstream licences; see the notices inside
+    each archive.
+
+hand-firmware/data/vendor/
+    Bundled browser libraries retain their original licences. They are vendored
+    rather than loaded from a CDN because the ESP32 serves the dashboard from
+    an offline WiFi access point with no internet route.
+
+docs/
+    The written report, its figures, and the EEG recordings under
+    eeg-classifier/DATA/ are academic work submitted to Birzeit University.
+    They are published here for reference and reproducibility, not for reuse.
