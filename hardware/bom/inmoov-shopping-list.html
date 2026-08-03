@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InMoov Shopping List</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f5f4f0; color: #1a1a18; font-size: 14px; }
+
+  header { background: #1a1a18; color: #f5f4f0; padding: 20px 24px 16px; }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+  header p { font-size: 12px; color: #9a9890; margin-top: 4px; }
+
+  .toolbar { background: #fff; border-bottom: 1px solid #e8e6e0; padding: 10px 24px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .progress-bar { flex: 1; min-width: 160px; height: 6px; background: #e8e6e0; border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: #2d8a5e; border-radius: 3px; transition: width 0.3s; }
+  .progress-label { font-size: 12px; color: #6b6960; white-space: nowrap; }
+
+  .filter-btn { padding: 5px 12px; border: 1px solid #d8d6d0; border-radius: 20px; background: #fff; font-size: 12px; cursor: pointer; color: #3a3a38; transition: all 0.15s; white-space: nowrap; }
+  .filter-btn:hover { background: #f0ede8; }
+  .filter-btn.active { background: #1a1a18; color: #fff; border-color: #1a1a18; }
+  .clear-btn { padding: 5px 12px; border: 1px solid #e85c3a; border-radius: 20px; background: #fff; font-size: 12px; cursor: pointer; color: #e85c3a; margin-left: auto; }
+  .clear-btn:hover { background: #fff0ec; }
+
+  .store-section { margin: 16px 24px 0; }
+  .store-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 8px 8px 0 0; font-weight: 600; font-size: 13px; cursor: pointer; user-select: none; }
+  .store-header .store-count { margin-left: auto; font-size: 11px; font-weight: 400; padding: 2px 8px; border-radius: 10px; }
+  .store-header .chevron { font-size: 11px; transition: transform 0.2s; }
+  .store-header.collapsed .chevron { transform: rotate(-90deg); }
+  .store-address { font-size: 11px; font-weight: 400; opacity: 0.75; margin-left: 4px; }
+
+  .store-abuein .store-header  { background: #e8f0f8; color: #1a3a60; }
+  .store-abuein .store-header .store-count { background: #c0d8f0; color: #1a3a60; }
+  .store-labco .store-header   { background: #eef4e8; color: #1a4a20; }
+  .store-labco .store-header .store-count { background: #c8e0b8; color: #1a4a20; }
+  .store-ali .store-header     { background: #fff0e4; color: #7a3010; }
+  .store-ali .store-header .store-count { background: #ffd8b8; color: #7a3010; }
+  .store-robotics .store-header { background: #f4e8f8; color: #5a1a78; }
+  .store-robotics .store-header .store-count { background: #e0c8f0; color: #5a1a78; }
+
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 0 0 8px 8px; overflow: hidden; margin-bottom: 16px; }
+  th { background: #f8f7f4; padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 600; color: #6b6960; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #ece9e4; }
+  td { padding: 9px 12px; border-bottom: 1px solid #f0ede8; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr.bought td { opacity: 0.4; }
+  tr.bought td:first-child { opacity: 1; }
+  tr.bought .item-name { text-decoration: line-through; }
+  tr.hidden { display: none; }
+
+  .cb-cell { width: 36px; text-align: center; }
+  input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: #2d8a5e; }
+  .cat-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; background: #ece9e4; color: #5a5850; white-space: nowrap; }
+  .item-name { font-weight: 500; color: #1a1a18; }
+  .item-note { font-size: 11px; color: #7a7870; margin-top: 2px; }
+  .critical { color: #c02820; font-weight: 600; }
+  .done-tag { display: inline-block; background: #d0f0e0; color: #1a6040; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-left: 6px; }
+  .qty-cell { font-weight: 600; color: #3a3a38; white-space: nowrap; font-size: 13px; }
+
+  footer { margin: 8px 24px 24px; padding: 14px 16px; background: #fff; border-radius: 8px; font-size: 12px; color: #6b6960; border: 1px solid #ece9e4; line-height: 1.8; }
+  footer strong { color: #1a1a18; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>InMoov right hand + forearm — shopping list</h1>
+  <p>Sorted by store · Ramallah & Betunia · 54 items</p>
+</header>
+
+<div class="toolbar">
+  <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+  <span class="progress-label" id="progressLabel">0 / 54 bought</span>
+  <button class="filter-btn active" onclick="filterStore('all',event)">All stores</button>
+  <button class="filter-btn" onclick="filterStore('abuein',event)">🔧 Abu Ein</button>
+  <button class="filter-btn" onclick="filterStore('labco',event)">⚡ Labco</button>
+  <button class="filter-btn" onclick="filterStore('robotics',event)">🤖 Robotics Store</button>
+  <button class="filter-btn" onclick="filterStore('ali',event)">📦 AliExpress</button>
+  <button class="clear-btn" onclick="clearAll()">Clear all</button>
+</div>
+
+<div id="lists"></div>
+
+<footer>
+  <strong>Trip plan:</strong><br>
+  🔧 <strong>Abu Ein — Betunia:</strong> Screws (M3/M4/M8), glue, epoxy, drill bits, tap, tools, fishing line, springs, PTFE tube, spray paint, grease<br>
+  ⚡ <strong>Labco — Ramallah:</strong> ESP32, Arduino, PCA9685, capacitors, resistors, PCB boards, headers, buck converter, wires, soldering tools<br>
+  🤖 <strong>Robotics Store — Ramallah:</strong> MG995 ×5 servos, MG996R (already have), filament<br>
+  📦 <strong>AliExpress (order today):</strong> Battery pack, smart charger, PTFE tube (if Abu Ein doesn't have), braided fishing line (if not available), XT60 connectors, servo extension cables, ribbon cable
+</footer>
+
+<script>
+const items = [
+  // ABU EIN BETUNIA — Hardware + Construction + Tendons
+  {store:'abuein', cat:'Screws', name:'M3 × 16mm screws + nuts', qty:'×20+', note:'Fingers to WristLarge + finger covers'},
+  {store:'abuein', cat:'Screws', name:'M3 × 12mm screws', qty:'×20+', note:'General cover mounting'},
+  {store:'abuein', cat:'Screws', name:'M3 × 4mm screws (MAX 4mm length)', qty:'×10', note:'Spring retention in fingers — MUST be maximum 4mm length', critical:true},
+  {store:'abuein', cat:'Screws', name:'M4 nuts', qty:'×2', note:'Press into robpart5 cavities — heat with lighter to fit'},
+  {store:'abuein', cat:'Screws', name:'M8 bolt', qty:'×1', note:'WristLarge to RotaWrist3 joint — or print from STL'},
+  {store:'abuein', cat:'Screws', name:'Wood screws small 2–3mm', qty:'×6+', note:'Servo bed into robpart5 + wrist servo mount'},
+  {store:'abuein', cat:'Screws', name:'Mini clamp / C-ring 2–3mm', qty:'×1', note:'Locks M8 printed bolt groove — prevents hand detaching from wrist'},
+  {store:'abuein', cat:'Glue', name:'Epoxy 2-component glue', qty:'×1 tube', note:'rotawrist1 → robpart2 permanent joint — strongest option', critical:true},
+  {store:'abuein', cat:'Glue', name:'Super glue (CA glue)', qty:'×1 tube', note:'Spring tube in tensioner + fishing line knot sealing'},
+  {store:'abuein', cat:'Glue', name:'Gear grease / lithium grease', qty:'×1 small', note:'rotawrist2 gear — apply before assembly'},
+  {store:'abuein', cat:'Paint', name:'Black spray paint', qty:'×1 can', note:'Optional — spray rotawrist2 before assembly (grease turns white PLA yellow)'},
+  {store:'abuein', cat:'Tendons', name:'Braided fishing line 0.8mm 200LB', qty:'×5 lengths 50cm', note:'Finger tendons · search: braided fishing line 0.8mm 200LB · fishing shop if not available here', critical:true},
+  {store:'abuein', cat:'Tendons', name:'Extension springs 0.5mm × 1cm', qty:'×5', note:'For tensioner · search: extension spring 0.5mm diameter 1cm length · try AliExpress if not found'},
+  {store:'abuein', cat:'Tendons', name:'Small rubber tube tiny pieces', qty:'×5', note:'Drive tendon into spring ring — prevents fishing line erosion'},
+  {store:'abuein', cat:'Tools', name:'Drill bits set: 2mm 2.5mm 3mm 6mm 8mm', qty:'×1 set', note:'Redrilling all printed parts after printing — mandatory', critical:true},
+  {store:'abuein', cat:'Tools', name:'M3 tap (thread tap)', qty:'×1', note:'Tapping cover mounting holes'},
+  {store:'abuein', cat:'Tools', name:'Pliers + side cutters', qty:'×1 set', note:'Removing supports + cutting fishing line'},
+  {store:'abuein', cat:'Tools', name:'Sharp hobby knife', qty:'×1', note:'Clearing holes + trimming supports after printing'},
+  {store:'abuein', cat:'Tools', name:'Small flat file / needle file', qty:'×1', note:'Fitting servo bed into robpart shell if too tight'},
+  {store:'abuein', cat:'Tools', name:'Heat gun or lighter', qty:'×1', note:'Pressing M4 nuts into robpart5 cavities'},
+  {store:'abuein', cat:'Tools', name:'Magnetic screwdriver', qty:'×1', note:"Setting tiny screws in finger springs — Gael's own tip"},
+  {store:'abuein', cat:'Tools', name:'Wire stripper', qty:'×1', note:'Stripping silicone power wires'},
+  {store:'abuein', cat:'Tools', name:'Tweezers fine tip', qty:'×1', note:'Running wires and PTFE tubes through tight channels'},
+  {store:'abuein', cat:'Tools', name:'Large sewing needles', qty:'×2', note:'Running fishing line through finger springs · try craft store if not here'},
+  {store:'abuein', cat:'Misc', name:'Electrical tape', qty:'×1 roll', note:'Wrapping ribbon sections'},
+  {store:'abuein', cat:'Misc', name:'Red marker pen', qty:'×1', note:'Mark positive (+) wire on each ribbon section'},
+
+  // LABCO RAMALLAH — Electronics + Electrical
+  {store:'labco', cat:'Controllers', name:'ESP32 WROOM DevKit v1', qty:'×1', note:'Bluetooth + WiFi — search: ESP32 DevKit WROOM · if not available try AliExpress', critical:true},
+  {store:'labco', cat:'Controllers', name:'Arduino Uno R3', qty:'×1', note:'Servo controller — clone is fine, cheaper'},
+  {store:'labco', cat:'Controllers', name:'PCA9685 16-channel PWM board', qty:'×1', note:'Already at robotics store ₪55 ✓', done:true},
+  {store:'labco', cat:'Power', name:'DC-DC Buck converter 6V→5V (LM2596)', qty:'×1', note:'CRITICAL — powers Arduino + ESP32 from 6V battery · search: LM2596 buck module', critical:true},
+  {store:'labco', cat:'Power', name:'Capacitor 470µF–1000µF electrolytic', qty:'×2', note:'CRITICAL — absorbs servo current spikes, prevents ESP32 random resets', critical:true},
+  {store:'labco', cat:'Power', name:'Capacitor 100µF electrolytic', qty:'×2', note:'Extra smoothing on 5V line to Arduino + ESP32'},
+  {store:'labco', cat:'Power', name:'Resistor 30kΩ', qty:'×4', note:'R1 of voltage divider — reduces 6V to safe level for ESP32 ADC'},
+  {store:'labco', cat:'Power', name:'Resistor 7.5kΩ', qty:'×4', note:'R2 of voltage divider — connects to ESP32 GPIO34 for battery reading'},
+  {store:'labco', cat:'PCB', name:'Double-sided prototype PCB 9×15cm', qty:'×2', note:'One for controllers + one for power — replaces breadboard permanently'},
+  {store:'labco', cat:'PCB', name:'Female pin headers 2.54mm', qty:'×3 strips', note:'Mount ESP32 + Arduino removably on PCB'},
+  {store:'labco', cat:'PCB', name:'Male pin headers 2.54mm', qty:'×3 strips', note:'Servo connectors + I2C + power rails'},
+  {store:'labco', cat:'PCB', name:'Screw terminal blocks 2-pin', qty:'×4', note:'Battery and power connections — easier than soldering wires direct'},
+  {store:'labco', cat:'Wiring', name:'Silicone wire 20AWG red', qty:'×1m', note:'Power lines — handles heat better than PVC'},
+  {store:'labco', cat:'Wiring', name:'Silicone wire 20AWG black', qty:'×1m', note:'Power lines — handles heat better than PVC'},
+  {store:'labco', cat:'Wiring', name:'Dupont jumper wires pack (F-F M-F M-M)', qty:'×1 pack', note:'I2C connections + testing between boards'},
+  {store:'labco', cat:'Wiring', name:'Heat shrink tubing assorted', qty:'×1 pack', note:'Insulating solder joints on PCB'},
+  {store:'labco', cat:'Wiring', name:'USB cable USB-A to USB-B', qty:'×1', note:'Programming Arduino Uno'},
+  {store:'labco', cat:'Wiring', name:'USB cable USB-A to Micro-USB', qty:'×1', note:'Programming ESP32 DevKit'},
+  {store:'labco', cat:'Tools', name:'Soldering iron + solder', qty:'×1', note:'Soldering components to PCB prototype board'},
+  {store:'labco', cat:'Tools', name:'Multimeter', qty:'×1', note:'Test voltage + check shorts before powering up · already at robotics store ₪25', done:true},
+  {store:'labco', cat:'Tools', name:'Flux pen', qty:'×1', note:'Makes soldering on PCB much cleaner — optional but recommended'},
+  {store:'labco', cat:'Tubes', name:'PTFE tube ID1.5mm × OD2.5mm', qty:'~2m', note:'Cut to: Thumb 335mm / Index 300mm / Middle 300mm / Ring 300mm / Pinky 360mm · try AliExpress if not available', critical:true},
+
+  // ROBOTICS STORE RAMALLAH
+  {store:'robotics', cat:'Servos', name:'MG995 Metal Gear Servo', qty:'×5', note:'Finger servos — ₪54 each · already in store'},
+  {store:'robotics', cat:'Servos', name:'MG996R Metal Gear Servo', qty:'×1', note:'Wrist rotation — already purchased ✓', done:true},
+  {store:'robotics', cat:'Filament', name:'White PLA+ filament 1.75mm 1kg', qty:'×1 roll', note:'All 24 printed parts — 0.4mm nozzle'},
+
+  // ALIEXPRESS — Order immediately
+  {store:'ali', cat:'Battery', name:'6V NiMH battery pack 2000mAh+', qty:'×1', note:'Search: 6V 2000mAh NiMH RC battery pack — ideal voltage for MG995/MG996R', critical:true},
+  {store:'ali', cat:'Battery', name:'NiMH smart charger', qty:'×1', note:'SMART charger only — stops automatically when full. Dumb charger kills battery', critical:true},
+  {store:'ali', cat:'Battery', name:'XT60 connector pair (M+F)', qty:'×2 pairs', note:'Main power connector between battery and PCB'},
+  {store:'ali', cat:'Cables', name:'Servo extension cables 30cm', qty:'×6', note:'From PCA9685 to each servo — search: servo extension wire 30cm'},
+  {store:'ali', cat:'Cables', name:'Ribbon cable 16-pin flat flexible', qty:'×1m min', note:'Thin flexible — search: ribbon cable 16 pin flat flexible'},
+];
+
+const storeConfig = {
+  abuein:   { label: '🔧 Abu Ein — Betunia', sub: 'Hardware · tools · screws · tendons · glue', cls: 'store-abuein' },
+  labco:    { label: '⚡ Labco — Ramallah', sub: 'Electronics · PCB · wiring · controllers', cls: 'store-labco' },
+  robotics: { label: '🤖 Robotics Store — Ramallah', sub: 'Servos · filament', cls: 'store-robotics' },
+  ali:      { label: '📦 AliExpress — Order today', sub: 'Battery · charger · cables (takes time to ship)', cls: 'store-ali' },
+};
+
+let checked = JSON.parse(localStorage.getItem('inmoov_checked_v2') || '{}');
+let currentFilter = 'all';
+
+function saveChecked() { localStorage.setItem('inmoov_checked_v2', JSON.stringify(checked)); }
+
+function updateProgress() {
+  const total = items.length;
+  const done = items.filter((it, i) => checked[i] || it.done).length;
+  const pct = Math.round(done / total * 100);
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressLabel').textContent = done + ' / ' + total + ' bought';
+}
+
+function toggleCheck(idx) {
+  checked[idx] = !checked[idx];
+  saveChecked();
+  const row = document.getElementById('row-' + idx);
+  row.classList.toggle('bought', !!checked[idx]);
+  updateProgress();
+}
+
+function filterStore(store, event) {
+  currentFilter = store;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  if (event) event.target.classList.add('active');
+  Object.keys(storeConfig).forEach(s => {
+    const sec = document.getElementById('section-' + s);
+    if (!sec) return;
+    sec.style.display = (store === 'all' || s === store) ? '' : 'none';
+  });
+}
+
+function clearAll() {
+  if (!confirm('Clear all checkboxes?')) return;
+  checked = {};
+  saveChecked();
+  document.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+  document.querySelectorAll('tr.bought').forEach(tr => tr.classList.remove('bought'));
+  updateProgress();
+}
+
+function toggleSection(store) {
+  const header = document.getElementById('header-' + store);
+  const tbody = document.getElementById('tbody-' + store);
+  header.classList.toggle('collapsed');
+  tbody.style.display = header.classList.contains('collapsed') ? 'none' : '';
+}
+
+function render() {
+  const container = document.getElementById('lists');
+  container.innerHTML = '';
+  Object.entries(storeConfig).forEach(([storeKey, storeMeta]) => {
+    const storeItems = items.map((it, i) => ({...it, idx: i})).filter(it => it.store === storeKey);
+    const sec = document.createElement('div');
+    sec.className = 'store-section ' + storeMeta.cls;
+    sec.id = 'section-' + storeKey;
+    sec.innerHTML = `
+      <div class="store-header" id="header-${storeKey}" onclick="toggleSection('${storeKey}')">
+        <span>${storeMeta.label}</span>
+        <span class="store-address">${storeMeta.sub}</span>
+        <span class="store-count">${storeItems.length} items</span>
+        <span class="chevron">▼</span>
+      </div>
+      <table>
+        <thead><tr>
+          <th class="cb-cell">✓</th>
+          <th>Item</th>
+          <th>Qty</th>
+          <th>Category</th>
+        </tr></thead>
+        <tbody id="tbody-${storeKey}">
+          ${storeItems.map(it => `
+            <tr id="row-${it.idx}" class="${(checked[it.idx] || it.done) ? 'bought' : ''}">
+              <td class="cb-cell">
+                <input type="checkbox" ${(checked[it.idx] || it.done) ? 'checked' : ''} onchange="toggleCheck(${it.idx})">
+              </td>
+              <td>
+                <div class="item-name">${it.name}${it.done ? '<span class="done-tag">have it ✓</span>' : ''}</div>
+                <div class="item-note ${it.critical ? 'critical' : ''}">${it.critical ? '⚠️ ' : ''}${it.note}</div>
+              </td>
+              <td class="qty-cell">${it.qty}</td>
+              <td><span class="cat-badge">${it.cat}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+    container.appendChild(sec);
+  });
+  updateProgress();
+}
+
+render();
+</script>
+</body>
+</html>
