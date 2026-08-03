@@ -1,0 +1,10 @@
+EEG Recording Summary
+Generated: 2026-06-02T02:11:11
+Subject: S001   Mode: test   Run: 01
+Cue=1.0s  Action=2.0s  Rest=1.5s
+
+Class                   Trials  Accepted  Rejected
+--------------------------------------------------
+single_blink                35        34         1
+--------------------------------------------------
+TOTAL                       35        34         1

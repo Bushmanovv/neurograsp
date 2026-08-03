@@ -1,0 +1,11 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Local backup of the pre-simplification program (kept locally, not in repo)
+eeg_stimulus_OLD_backup.py

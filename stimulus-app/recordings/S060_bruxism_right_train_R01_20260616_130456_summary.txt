@@ -1,0 +1,16 @@
+EEG Recording Summary
+==================================================
+Subject ID    : S060
+Mode          : TRAIN
+Recording #   : R01
+Date          : 2026-06-16
+Time          : 13:04:56
+Class         : bruxism_right (marker 8)
+Timing        : Cue=2.0s  Action=2.0s  Rest=1.5s
+==================================================
+
+Class                   Trials  Accepted  Rejected
+--------------------------------------------------
+bruxism_right               50        50         0
+--------------------------------------------------
+TOTAL                       50        50         0

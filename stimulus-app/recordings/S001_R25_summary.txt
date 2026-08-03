@@ -1,0 +1,11 @@
+EEG Session Summary
+Generated: 2026-05-19T15:00:12
+Subject: S001   Run: 25
+Trials per signal: 20
+Active=2.0s  Rest=2.0s  Cue=1.0s
+
+Signal                          Trials  Accepted  Rejected
+------------------------------------------------------------
+prox_left                           20        20         0
+------------------------------------------------------------
+TOTAL                               20        20         0

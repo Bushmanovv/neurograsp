@@ -1,0 +1,19 @@
+EEG Session Summary
+Generated: 2026-05-13T10:24:00
+Subject: S001   Run: 05
+Trials per signal: 15
+Active=2.0s  Rest=3.0s  Cue=2.0s
+
+Signal                          Trials  Accepted  Rejected
+------------------------------------------------------------
+Double Blink                         0         0         0
+Left Jaw Clench                      0         0         0
+Single Blink                         0         0         0
+Triple Blink                         0         0         0
+Tongue Press Right                   0         0         0
+Tongue Press Left                    0         0         0
+Jaw Clench (both)                    0         0         0
+Right Jaw Clench                     0         0         0
+Eyes Closed Alpha                    0         0         0
+------------------------------------------------------------
+TOTAL                                0         0         0

@@ -1,0 +1,16 @@
+time_sec,marker_id,signal_name,trial_num,accepted,duration_sec
+13.111,2,double_blink,1,True,2.0
+18.448,2,double_blink,2,True,2.0
+23.375,2,double_blink,3,True,2.0
+28.457,2,double_blink,4,True,2.0
+33.385,2,double_blink,5,True,2.0
+38.846,2,double_blink,6,True,2.0
+43.901,2,double_blink,7,True,2.0
+49.314,2,double_blink,8,True,2.0
+54.782,2,double_blink,9,True,2.0
+59.686,2,double_blink,10,True,2.0
+64.891,2,double_blink,11,True,2.0
+69.891,2,double_blink,12,True,2.0
+74.952,2,double_blink,13,True,2.0
+80.114,2,double_blink,14,True,2.0
+85.168,2,double_blink,15,True,2.0

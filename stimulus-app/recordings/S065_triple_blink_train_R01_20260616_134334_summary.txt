@@ -1,0 +1,16 @@
+EEG Recording Summary
+==================================================
+Subject ID    : S065
+Mode          : TRAIN
+Recording #   : R01
+Date          : 2026-06-16
+Time          : 13:43:34
+Class         : triple_blink (marker 3)
+Timing        : Cue=2.0s  Action=2.0s  Rest=1.5s
+==================================================
+
+Class                   Trials  Accepted  Rejected
+--------------------------------------------------
+triple_blink                50        50         0
+--------------------------------------------------
+TOTAL                       50        50         0

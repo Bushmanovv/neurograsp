@@ -1,0 +1,16 @@
+EEG Recording Summary
+==================================================
+Subject ID    : S0031
+Mode          : TRAIN
+Recording #   : R01
+Date          : 2026-06-02
+Time          : 13:24:42
+Class         : bruxism_both (marker 7)
+Timing        : Cue=1.0s  Action=2.0s  Rest=1.0s
+==================================================
+
+Class                   Trials  Accepted  Rejected
+--------------------------------------------------
+bruxism_both                40        40         0
+--------------------------------------------------
+TOTAL                       40        40         0

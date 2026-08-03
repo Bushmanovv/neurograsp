@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EEG Recording — Stimulus Presentation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;700;900&display=swap');
+
+  :root {
+    --bg: #000408;
+    --primary: #00e5ff;
+    --accent: #ff3d71;
+    --green: #00ff88;
+    --yellow: #ffd600;
+    --dim: #1a2a3a;
+    --text: #e0f7fa;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Exo 2', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── SETUP SCREEN ── */
+  #setup-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 24px;
+    padding: 40px;
+  }
+
+  #setup-screen h1 {
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: var(--primary);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    text-shadow: 0 0 30px var(--primary);
+  }
+
+  .setup-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    width: 100%;
+    max-width: 700px;
+  }
+
+  .setup-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .setup-field label {
+    font-size: 0.75rem;
+    letter-spacing: 2px;
+    color: var(--primary);
+    text-transform: uppercase;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .setup-field input, .setup-field select {
+    background: #0a1520;
+    border: 1px solid var(--dim);
+    color: var(--text);
+    padding: 10px 14px;
+    font-size: 1rem;
+    font-family: 'Share Tech Mono', monospace;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .setup-field input:focus, .setup-field select:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 10px rgba(0,229,255,0.2);
+  }
+
+  .classes-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    width: 100%;
+    max-width: 700px;
+  }
+
+  .class-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #0a1520;
+    border: 1px solid var(--dim);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+  }
+
+  .class-toggle.active {
+    border-color: var(--primary);
+    background: rgba(0,229,255,0.1);
+    color: var(--primary);
+  }
+
+  .class-toggle input { display: none; }
+
+  #start-btn {
+    background: var(--primary);
+    color: #000;
+    border: none;
+    padding: 16px 60px;
+    font-size: 1.1rem;
+    font-weight: 900;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 4px;
+    font-family: 'Exo 2', sans-serif;
+    transition: all 0.2s;
+    box-shadow: 0 0 30px rgba(0,229,255,0.4);
+  }
+
+  #start-btn:hover {
+    transform: scale(1.04);
+    box-shadow: 0 0 50px rgba(0,229,255,0.6);
+  }
+
+  /* ── MAIN SCREEN ── */
+  #main-screen {
+    display: none;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* Top HUD */
+  .hud {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 32px;
+    background: rgba(0,10,20,0.9);
+    border-bottom: 1px solid var(--dim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 2px;
+  }
+
+  .hud-item { display: flex; flex-direction: column; gap: 2px; }
+  .hud-label { color: #456; font-size: 0.65rem; }
+  .hud-value { color: var(--primary); font-size: 1rem; }
+
+  /* Progress bar */
+  .progress-bar {
+    height: 3px;
+    background: var(--dim);
+    position: relative;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary), var(--green));
+    transition: width 0.3s;
+    box-shadow: 0 0 10px var(--primary);
+  }
+
+  /* Center stage */
+  .stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+
+  /* Fixation cross */
+  #fixation {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .cross {
+    font-size: 8rem;
+    color: #334;
+    font-weight: 300;
+    line-height: 1;
+    animation: pulse-cross 1s ease-in-out infinite;
+  }
+
+  @keyframes pulse-cross {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+  }
+
+  /* Stimulus display */
+  #stimulus {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    animation: appear 0.15s ease-out;
+  }
+
+  @keyframes appear {
+    from { transform: scale(0.85); opacity: 0; }
+    to   { transform: scale(1);    opacity: 1; }
+  }
+
+  .stimulus-emoji {
+    font-size: 5rem;
+    line-height: 1;
+  }
+
+  .stimulus-word {
+    font-size: 5.5rem;
+    font-weight: 900;
+    letter-spacing: 8px;
+    text-transform: uppercase;
+    text-shadow: 0 0 60px currentColor;
+  }
+
+  .stimulus-ar {
+    font-size: 1.4rem;
+    opacity: 0.7;
+    letter-spacing: 2px;
+  }
+
+  /* Timer ring */
+  .timer-ring {
+    position: relative;
+    width: 80px;
+    height: 80px;
+  }
+
+  .timer-ring svg {
+    transform: rotate(-90deg);
+  }
+
+  .timer-ring circle {
+    fill: none;
+    stroke-width: 4;
+  }
+
+  .timer-bg { stroke: #1a2a3a; }
+  .timer-fill {
+    stroke: currentColor;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.1s linear;
+  }
+
+  .timer-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: bold;
+  }
+
+  /* Class colors */
+  .c-rest    { color: #607d8b; }
+  .c-blink   { color: #00e5ff; }
+  .c-double  { color: #7c4dff; }
+  .c-jaw     { color: #ff6d00; }
+  .c-eyes    { color: #00c853; }
+  .c-swallow { color: #ff3d71; }
+
+  /* Bottom log */
+  .log-panel {
+    background: rgba(0,10,20,0.95);
+    border-top: 1px solid var(--dim);
+    padding: 8px 32px;
+    height: 80px;
+    overflow: hidden;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.72rem;
+  }
+
+  .log-title {
+    color: #456;
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+
+  #log-list {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 2px;
+    height: 54px;
+    overflow: hidden;
+  }
+
+  .log-entry {
+    display: flex;
+    gap: 12px;
+    opacity: 0.8;
+  }
+
+  .log-time { color: #456; }
+  .log-marker { color: var(--yellow); }
+  .log-class { }
+
+  /* Beep indicator */
+  .beep-flash {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,229,255,0.06);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+
+  .beep-flash.active { opacity: 1; }
+
+  /* Pause / Done overlay */
+  #pause-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,4,8,0.92);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 24px;
+    z-index: 100;
+  }
+
+  #pause-overlay h2 {
+    font-size: 2rem;
+    font-weight: 900;
+    letter-spacing: 6px;
+    color: var(--yellow);
+  }
+
+  #pause-overlay p {
+    color: #789;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.9rem;
+    letter-spacing: 2px;
+  }
+
+  .overlay-btn {
+    background: var(--green);
+    color: #000;
+    border: none;
+    padding: 14px 50px;
+    font-size: 1rem;
+    font-weight: 900;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 4px;
+    font-family: 'Exo 2', sans-serif;
+    box-shadow: 0 0 30px rgba(0,255,136,0.4);
+  }
+
+  /* Done screen */
+  #done-screen {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 20px;
+    z-index: 200;
+  }
+
+  #done-screen h1 {
+    font-size: 3rem;
+    font-weight: 900;
+    color: var(--green);
+    letter-spacing: 6px;
+    text-shadow: 0 0 40px var(--green);
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    text-align: center;
+  }
+
+  .stat-box {
+    background: #0a1520;
+    border: 1px solid var(--dim);
+    padding: 20px;
+    border-radius: 4px;
+  }
+
+  .stat-num {
+    font-size: 2rem;
+    font-weight: 900;
+    color: var(--primary);
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .stat-lbl {
+    font-size: 0.7rem;
+    color: #456;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  #download-btn {
+    background: var(--primary);
+    color: #000;
+    border: none;
+    padding: 14px 50px;
+    font-size: 1rem;
+    font-weight: 900;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 4px;
+    font-family: 'Exo 2', sans-serif;
+  }
+</style>
+</head>
+<body>
+
+<!-- SETUP -->
+<div id="setup-screen">
+  <h1>🧠 EEG Stimulus Recorder</h1>
+
+  <div class="setup-grid">
+    <div class="setup-field">
+      <label>رقم المريض / Subject ID</label>
+      <input type="text" id="subject-id" placeholder="S001" value="S001">
+    </div>
+    <div class="setup-field">
+      <label>رقم الـ Run</label>
+      <input type="number" id="run-num" placeholder="1" value="1" min="1" max="10">
+    </div>
+    <div class="setup-field">
+      <label>عدد التكرار لكل حالة</label>
+      <input type="number" id="trials-per-class" value="10" min="5" max="50">
+    </div>
+    <div class="setup-field">
+      <label>مدة التنفيذ (ثانية)</label>
+      <input type="number" id="active-dur" value="2" min="1" max="5" step="0.5">
+    </div>
+    <div class="setup-field">
+      <label>مدة الراحة (ثانية)</label>
+      <input type="number" id="rest-dur" value="3" min="1" max="8" step="0.5">
+    </div>
+    <div class="setup-field">
+      <label>صوت Beep</label>
+      <select id="beep-on">
+        <option value="1">✅ مفعّل</option>
+        <option value="0">❌ معطّل</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="width:100%;max-width:700px;">
+    <div class="setup-field">
+      <label>الحالات المطلوبة (اختر)</label>
+    </div>
+    <div class="classes-grid" style="margin-top:8px">
+      <label class="class-toggle active c-rest">
+        <input type="checkbox" value="rest" checked> 😐 REST
+      </label>
+      <label class="class-toggle active c-blink">
+        <input type="checkbox" value="blink" checked> 👁 BLINK
+      </label>
+      <label class="class-toggle active c-double">
+        <input type="checkbox" value="double" checked> 👁👁 DOUBLE
+      </label>
+      <label class="class-toggle active c-jaw">
+        <input type="checkbox" value="jaw" checked> 🦷 JAW
+      </label>
+      <label class="class-toggle active c-eyes">
+        <input type="checkbox" value="eyes" checked> 😑 EYES CLOSED
+      </label>
+      <label class="class-toggle active c-swallow">
+        <input type="checkbox" value="swallow" checked> 💧 SWALLOW
+      </label>
+    </div>
+  </div>
+
+  <button id="start-btn" onclick="startSession()">▶ ابدأ التسجيل</button>
+</div>
+
+<!-- MAIN -->
+<div id="main-screen">
+  <div class="hud">
+    <div class="hud-item">
+      <span class="hud-label">SUBJECT</span>
+      <span class="hud-value" id="hud-subject">S001</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">RUN</span>
+      <span class="hud-value" id="hud-run">01</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">TRIAL</span>
+      <span class="hud-value" id="hud-trial">0 / 0</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">CLASS</span>
+      <span class="hud-value" id="hud-class">—</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">PHASE</span>
+      <span class="hud-value" id="hud-phase">READY</span>
+    </div>
+    <div class="hud-item">
+      <span class="hud-label">ELAPSED</span>
+      <span class="hud-value" id="hud-elapsed">0:00</span>
+    </div>
+  </div>
+
+  <div class="progress-bar">
+    <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+  </div>
+
+  <div class="stage">
+    <!-- Fixation -->
+    <div id="fixation" style="display:flex">
+      <span class="cross">+</span>
+    </div>
+
+    <!-- Stimulus -->
+    <div id="stimulus">
+      <div class="stimulus-emoji" id="stim-emoji"></div>
+      <div class="stimulus-word" id="stim-word"></div>
+      <div class="stimulus-ar"  id="stim-ar"></div>
+      <div class="timer-ring" id="timer-ring">
+        <svg width="80" height="80" viewBox="0 0 80 80">
+          <circle class="timer-bg" cx="40" cy="40" r="36"/>
+          <circle class="timer-fill" id="timer-arc" cx="40" cy="40" r="36"
+                  stroke-dasharray="226" stroke-dashoffset="0"/>
+        </svg>
+        <div class="timer-text" id="timer-text">2.0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="log-panel">
+    <div class="log-title">▸ MARKER LOG</div>
+    <div id="log-list"></div>
+  </div>
+</div>
+
+<!-- PAUSE -->
+<div id="pause-overlay">
+  <h2 id="pause-title">⏸ BREAK</h2>
+  <p id="pause-msg">خذ راحة — اضغط متابعة لما تكون جاهز</p>
+  <button class="overlay-btn" onclick="resumeSession()">▶ متابعة</button>
+</div>
+
+<!-- DONE -->
+<div id="done-screen">
+  <h1>✅ DONE</h1>
+  <p style="color:#456;letter-spacing:2px;font-family:'Share Tech Mono',monospace">تم انتهاء الجلسة بنجاح</p>
+  <div class="stats-grid" id="done-stats"></div>
+  <button id="download-btn" onclick="downloadLog()">⬇ تحميل الـ Markers CSV</button>
+  <button class="overlay-btn" onclick="location.reload()" style="background:#334;color:#aaa;box-shadow:none">
+    ↩ جلسة جديدة
+  </button>
+</div>
+
+<div class="beep-flash" id="beep-flash"></div>
+
+<script>
+// ── CLASS DEFINITIONS ──
+const CLASS_DEF = {
+  rest:    { emoji:'😐', word:'REST',        ar:'راحة — لا تتحرك',      color:'#607d8b', marker:0 },
+  blink:   { emoji:'👁',  word:'BLINK',       ar:'ارمش مرة وحدة',        color:'#00e5ff', marker:1 },
+  double:  { emoji:'👁👁', word:'DOUBLE',      ar:'ارمش مرتين',           color:'#7c4dff', marker:2 },
+  jaw:     { emoji:'🦷', word:'JAW',          ar:'اشد فكك بخفة',         color:'#ff6d00', marker:3 },
+  eyes:    { emoji:'😑', word:'EYES CLOSED',  ar:'اغمض عيناك',           color:'#00c853', marker:4 },
+  swallow: { emoji:'💧', word:'SWALLOW',      ar:'ابلع ريقك',            color:'#ff3d71', marker:5 },
+};
+
+// ── STATE ──
+let sequence = [];
+let trialIdx = 0;
+let sessionLog = [];
+let startTime = null;
+let sessionTimer = null;
+let activeDur = 2;
+let restDur = 3;
+let useBeep = true;
+let isPaused = false;
+
+// Audio context for beep
+let audioCtx = null;
+function beep(freq=880, dur=120, vol=0.3) {
+  if (!useBeep) return;
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur/1000);
+    osc.start(); osc.stop(audioCtx.currentTime + dur/1000);
+  } catch(e){}
+  // Flash
+  const f = document.getElementById('beep-flash');
+  f.classList.add('active');
+  setTimeout(()=>f.classList.remove('active'), 100);
+}
+
+// ── SETUP TOGGLES ──
+document.querySelectorAll('.class-toggle').forEach(label => {
+  label.addEventListener('click', () => {
+    label.classList.toggle('active');
+    label.querySelector('input').checked = label.classList.contains('active');
+  });
+});
+
+// ── START SESSION ──
+function startSession() {
+  const subjectId   = document.getElementById('subject-id').value || 'S001';
+  const runNum      = document.getElementById('run-num').value || '1';
+  activeDur         = parseFloat(document.getElementById('active-dur').value) || 2;
+  restDur           = parseFloat(document.getElementById('rest-dur').value) || 3;
+  const trialsEach  = parseInt(document.getElementById('trials-per-class').value) || 10;
+  useBeep           = document.getElementById('beep-on').value === '1';
+
+  // Get selected classes
+  const selected = [...document.querySelectorAll('.class-toggle input:checked')].map(i=>i.value);
+  if (selected.length === 0) { alert('اختر حالة وحدة على الأقل!'); return; }
+
+  // Build randomized sequence
+  sequence = [];
+  selected.forEach(cls => {
+    for (let i = 0; i < trialsEach; i++) sequence.push(cls);
+  });
+  // Fisher-Yates shuffle
+  for (let i = sequence.length-1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i+1));
+    [sequence[i], sequence[j]] = [sequence[j], sequence[i]];
+  }
+
+  // Update HUD
+  document.getElementById('hud-subject').textContent = subjectId;
+  document.getElementById('hud-run').textContent = runNum.toString().padStart(2,'0');
+  document.getElementById('hud-trial').textContent = `0 / ${sequence.length}`;
+
+  // Switch screens
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'flex';
+
+  startTime = Date.now();
+  sessionTimer = setInterval(updateElapsed, 500);
+
+  trialIdx = 0;
+  sessionLog = [];
+  runTrial();
+}
+
+// ── ELAPSED TIMER ──
+function updateElapsed() {
+  const s = Math.floor((Date.now() - startTime) / 1000);
+  const m = Math.floor(s/60);
+  document.getElementById('hud-elapsed').textContent = `${m}:${String(s%60).padStart(2,'0')}`;
+}
+
+// ── RUN A TRIAL ──
+function runTrial() {
+  if (trialIdx >= sequence.length) { endSession(); return; }
+
+  const cls = sequence[trialIdx];
+  const def = CLASS_DEF[cls];
+  const total = sequence.length;
+
+  // Update HUD
+  document.getElementById('hud-trial').textContent = `${trialIdx+1} / ${total}`;
+  document.getElementById('hud-class').textContent = def.word;
+  document.getElementById('progress-fill').style.width = `${(trialIdx/total)*100}%`;
+
+  // PHASE 1: Fixation (restDur seconds)
+  showFixation();
+  document.getElementById('hud-phase').textContent = 'REST';
+
+  setTimeout(() => {
+    if (isPaused) return;
+    // PHASE 2: Stimulus (activeDur seconds)
+    showStimulus(cls, def);
+    document.getElementById('hud-phase').textContent = 'ACTIVE';
+    beep(880, 80, 0.3);
+
+    // Log marker
+    const t = ((Date.now() - startTime)/1000).toFixed(2);
+    const entry = { time: t, marker: def.marker, class: cls, trial: trialIdx+1 };
+    sessionLog.push(entry);
+    addLogEntry(entry, def);
+
+    // Run timer animation
+    animateTimer(activeDur, def.color);
+
+    setTimeout(() => {
+      if (isPaused) return;
+      trialIdx++;
+
+      // Break every 30 trials (configurable)
+      if (trialIdx > 0 && trialIdx % 30 === 0 && trialIdx < sequence.length) {
+        showBreak(trialIdx, sequence.length);
+      } else {
+        runTrial();
+      }
+    }, activeDur * 1000);
+
+  }, restDur * 1000);
+}
+
+// ── DISPLAY HELPERS ──
+function showFixation() {
+  document.getElementById('fixation').style.display = 'flex';
+  document.getElementById('stimulus').style.display = 'none';
+}
+
+function showStimulus(cls, def) {
+  document.getElementById('fixation').style.display = 'none';
+  const stim = document.getElementById('stimulus');
+  stim.style.display = 'flex';
+
+  document.getElementById('stim-emoji').textContent = def.emoji;
+  document.getElementById('stim-word').textContent = def.word;
+  document.getElementById('stim-word').style.color = def.color;
+  document.getElementById('stim-word').style.textShadow = `0 0 60px ${def.color}`;
+  document.getElementById('stim-ar').textContent = def.ar;
+
+  const arc = document.getElementById('timer-arc');
+  arc.style.stroke = def.color;
+  document.getElementById('timer-text').style.color = def.color;
+}
+
+function animateTimer(dur, color) {
+  const circumference = 226;
+  const arc = document.getElementById('timer-arc');
+  const txt = document.getElementById('timer-text');
+  const fps = 30;
+  const steps = dur * fps;
+  let step = 0;
+
+  const interval = setInterval(() => {
+    step++;
+    const frac = step / steps;
+    arc.style.strokeDashoffset = circumference * frac;
+    txt.textContent = Math.max(0, dur - (step/fps)).toFixed(1);
+    if (step >= steps) clearInterval(interval);
+  }, 1000/fps);
+}
+
+function addLogEntry(entry, def) {
+  const list = document.getElementById('log-list');
+  const div = document.createElement('div');
+  div.className = 'log-entry';
+  div.innerHTML = `
+    <span class="log-time">${entry.time}s</span>
+    <span class="log-marker">[M:${entry.marker}]</span>
+    <span style="color:${def.color}">${entry.class.toUpperCase()}</span>
+    <span style="color:#456">trial ${entry.trial}</span>
+  `;
+  list.prepend(div);
+  // Keep only last 6
+  while (list.children.length > 6) list.removeChild(list.lastChild);
+}
+
+// ── BREAK ──
+function showBreak(done, total) {
+  isPaused = true;
+  const overlay = document.getElementById('pause-overlay');
+  document.getElementById('pause-title').textContent = `⏸ استراحة`;
+  document.getElementById('pause-msg').textContent = 
+    `تم إنهاء ${done} trial من ${total}. خذ راحة وتابع لما تكون جاهزاً.`;
+  overlay.style.display = 'flex';
+}
+
+function resumeSession() {
+  isPaused = false;
+  document.getElementById('pause-overlay').style.display = 'none';
+  runTrial();
+}
+
+// ── END SESSION ──
+function endSession() {
+  clearInterval(sessionTimer);
+  document.getElementById('main-screen').style.display = 'none';
+
+  // Count per class
+  const counts = {};
+  sessionLog.forEach(e => { counts[e.class] = (counts[e.class]||0)+1; });
+
+  // Stats
+  const statsGrid = document.getElementById('done-stats');
+  statsGrid.innerHTML = '';
+  Object.entries(counts).forEach(([cls, cnt]) => {
+    const def = CLASS_DEF[cls];
+    statsGrid.innerHTML += `
+      <div class="stat-box">
+        <div style="font-size:2rem">${def.emoji}</div>
+        <div class="stat-num" style="color:${def.color}">${cnt}</div>
+        <div class="stat-lbl">${def.word}</div>
+      </div>`;
+  });
+
+  // Total + duration
+  const totalSec = Math.floor((Date.now()-startTime)/1000);
+  statsGrid.innerHTML += `
+    <div class="stat-box">
+      <div class="stat-num">${sessionLog.length}</div>
+      <div class="stat-lbl">TOTAL TRIALS</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-num">${Math.floor(totalSec/60)}:${String(totalSec%60).padStart(2,'0')}</div>
+      <div class="stat-lbl">DURATION</div>
+    </div>`;
+
+  document.getElementById('done-screen').style.display = 'flex';
+}
+
+// ── DOWNLOAD LOG ──
+function downloadLog() {
+  const subj = document.getElementById('hud-subject').textContent;
+  const run  = document.getElementById('hud-run').textContent;
+  let csv = 'time_sec,marker,class,trial\n';
+  sessionLog.forEach(e => {
+    csv += `${e.time},${e.marker},${e.class},${e.trial}\n`;
+  });
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${subj}_R${run}_markers.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>

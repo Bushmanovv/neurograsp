@@ -1,0 +1,11 @@
+EEG Session Summary
+Generated: 2026-05-19T13:03:01
+Subject: S001   Run: 08
+Trials per signal: 15
+Active=2.0s  Rest=3.0s  Cue=2.0s
+
+Signal                          Trials  Accepted  Rejected
+------------------------------------------------------------
+Single Blink                        15        15         0
+------------------------------------------------------------
+TOTAL                               15        15         0

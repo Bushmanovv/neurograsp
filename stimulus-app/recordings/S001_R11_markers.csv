@@ -1,0 +1,5 @@
+time_sec,marker_id,signal_name,trial_num,accepted,duration_sec
+12.181,2,double_blink,1,True,2.0
+16.957,2,double_blink,2,True,2.0
+22.159,2,double_blink,3,True,2.0
+29.54,2,double_blink,4,True,2.0

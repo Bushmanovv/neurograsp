@@ -1,0 +1,16 @@
+EEG Recording Summary
+==================================================
+Subject ID    : S0033
+Mode          : TRAIN
+Recording #   : R01
+Date          : 2026-06-02
+Time          : 13:38:50
+Class         : bruxism_left (marker 9)
+Timing        : Cue=1.0s  Action=2.0s  Rest=1.0s
+==================================================
+
+Class                   Trials  Accepted  Rejected
+--------------------------------------------------
+bruxism_left                40        40         0
+--------------------------------------------------
+TOTAL                       40        40         0

@@ -1,0 +1,7 @@
+time_sec,marker_id,signal_name,trial_num,accepted,duration_sec
+3.643,6,left_wink,1,True,2.0
+10.73,2,double_blink,2,True,2.0
+17.827,10,look_up,3,True,2.0
+24.904,16,right_jaw,4,True,2.0
+31.98,40,eyes_closed_alpha,5,True,2.0
+39.099,27,teeth_grinding,6,True,2.0

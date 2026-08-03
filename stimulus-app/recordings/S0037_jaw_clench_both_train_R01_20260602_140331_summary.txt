@@ -1,0 +1,16 @@
+EEG Recording Summary
+==================================================
+Subject ID    : S0037
+Mode          : TRAIN
+Recording #   : R01
+Date          : 2026-06-02
+Time          : 14:03:31
+Class         : jaw_clench_both (marker 4)
+Timing        : Cue=1.0s  Action=2.0s  Rest=1.0s
+==================================================
+
+Class                   Trials  Accepted  Rejected
+--------------------------------------------------
+jaw_clench_both             40        40         0
+--------------------------------------------------
+TOTAL                       40        40         0

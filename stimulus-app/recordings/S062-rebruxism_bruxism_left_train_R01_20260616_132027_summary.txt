@@ -1,0 +1,16 @@
+EEG Recording Summary
+==================================================
+Subject ID    : S062-rebruxism
+Mode          : TRAIN
+Recording #   : R01
+Date          : 2026-06-16
+Time          : 13:20:27
+Class         : bruxism_left (marker 9)
+Timing        : Cue=2.0s  Action=2.0s  Rest=1.5s
+==================================================
+
+Class                   Trials  Accepted  Rejected
+--------------------------------------------------
+bruxism_left                50        50         0
+--------------------------------------------------
+TOTAL                       50        50         0

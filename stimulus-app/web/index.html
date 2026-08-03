@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EEG Stimulus — 9 Classes</title>
+<style>
+  :root{
+    --bg:#000000; --panel:#0a0a0a; --fg:#ffffff; --muted:#888;
+    --accent:#00d4ff; --ok:#00ff88; --warn:#ff5566; --field:#1a1a1a;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif;}
+  html,body{height:100%;}
+  body{background:var(--bg);color:var(--fg);overflow:hidden;}
+  .screen{display:none;height:100vh;width:100vw;}
+  .screen.active{display:flex;}
+  button{cursor:pointer;border:0;border-radius:6px;font-weight:700;color:#fff;
+         padding:11px 20px;font-size:15px;transition:filter .12s;}
+  button:hover{filter:brightness(1.2);}
+  .btn-green{background:#006644;} .btn-blue{background:#005577;}
+  .btn-grey{background:#333;} .btn-red{background:#aa0000;} .btn-amber{background:#665500;}
+  input[type=text],input[type=number]{
+    background:var(--field);color:var(--fg);border:0;border-radius:5px;
+    padding:8px 10px;font-size:15px;width:130px;font-family:'Consolas',monospace;}
+
+  /* ---------- SETUP ---------- */
+  #setup{flex-direction:column;align-items:center;justify-content:flex-start;
+         overflow-y:auto;padding:24px;gap:14px;}
+  #setup h1{color:var(--accent);font-size:30px;font-weight:900;margin-top:8px;}
+  #setup .sub{color:var(--muted);font-size:14px;}
+  .mode-row{display:flex;gap:12px;}
+  .mode-row button{font-size:16px;padding:14px 24px;}
+  .form{background:var(--panel);padding:18px 24px;border-radius:10px;
+        display:grid;grid-template-columns:auto auto;gap:10px 14px;align-items:center;}
+  .form label{text-align:right;color:var(--fg);font-size:14px;}
+  .toggles{display:flex;gap:24px;grid-column:1/3;justify-content:center;margin-top:6px;}
+  .toggle{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;}
+  .toggle .pill{width:54px;text-align:center;border-radius:5px;padding:5px 0;font-weight:700;font-size:13px;}
+  .pill.on{background:#006644;} .pill.off{background:#552222;}
+  .classes{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:720px;}
+  .classes .ttl{grid-column:1/4;text-align:center;color:var(--muted);font-weight:700;font-size:14px;}
+  .cbtn{background:#1f3a4a;border:2px solid #2a5070;border-radius:7px;padding:10px;
+        font-size:13px;font-weight:700;color:#fff;text-align:center;}
+  .cbtn.sel{background:#006644;border-color:#00aa66;}
+  #preview{color:var(--ok);font-weight:700;font-size:15px;min-height:20px;}
+
+  /* ---------- STIMULUS ---------- */
+  #stim{flex-direction:column;}
+  #topbar{background:var(--panel);display:flex;justify-content:space-between;
+          align-items:center;padding:8px 16px;font-family:'Consolas',monospace;font-size:14px;}
+  #topctrl{display:flex;gap:8px;}
+  #topctrl button{padding:7px 14px;font-size:13px;}
+  #prog{height:6px;background:#222;width:100%;}
+  #prog>div{height:100%;width:0;background:var(--accent);transition:width .2s;}
+  #center{flex:1;display:flex;align-items:center;justify-content:center;position:relative;}
+  .view{display:none;flex-direction:column;align-items:center;gap:6px;text-align:center;}
+  .view.show{display:flex;}
+  #cross{font-size:220px;font-weight:700;line-height:1;}
+  .cue-emoji{font-size:150px;line-height:1;}
+  .cue-title{font-size:60px;font-weight:800;}
+  .cue-ar{font-size:40px;color:#ffcc66;}
+  .cue-ins{font-size:18px;color:#aaa;}
+  .ringwrap{position:relative;width:160px;height:160px;margin-top:6px;}
+  .ringwrap svg{transform:rotate(-90deg);}
+  .ringnum{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+           font-size:48px;font-weight:800;font-family:'Helvetica';}
+  .act-emoji{font-size:170px;line-height:1;color:var(--ok);}
+  .act-word{font-size:84px;font-weight:800;color:var(--ok);}
+  .act-go{font-size:38px;font-weight:800;}
+  #paused{font-size:80px;font-weight:800;color:#ffaa00;}
+  #breakview{position:absolute;inset:0;background:#0a0a14;display:none;
+             flex-direction:column;align-items:center;justify-content:center;gap:16px;}
+  #breakview.show{display:flex;}
+  #breakview h2{font-size:64px;color:var(--accent);}
+  #log{background:#080808;height:84px;padding:6px 14px;overflow:hidden;}
+  #log .t{color:var(--muted);font-size:11px;font-weight:700;}
+  #logbody{color:#aaffaa;font-family:'Consolas',monospace;font-size:12px;white-space:pre;line-height:1.4;}
+  #hint{background:#050505;color:#666;font-size:12px;text-align:center;padding:5px;}
+
+  /* ---------- COMPLETE ---------- */
+  #done{flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;}
+  #done h1{font-size:30px;font-weight:800;}
+  #done .meta{color:#aaa;font-size:14px;}
+  #done .saved{font-weight:700;font-size:15px;}
+  table{border-collapse:collapse;margin:8px 0;}
+  th,td{padding:6px 18px;text-align:center;border-bottom:1px solid #222;font-size:14px;}
+  th{color:var(--accent);}
+  .donebtns{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;justify-content:center;}
+</style>
+</head>
+<body>
+
+<!-- ============ SETUP ============ -->
+<div id="setup" class="screen active">
+  <h1>EEG Recording Setup</h1>
+  <div class="sub">9 classes · individual TRAIN files · one mixed TEST file</div>
+
+  <div class="mode-row">
+    <button id="m-train" class="btn-green" onclick="setMode('train')">🎯 TRAIN (one class)</button>
+    <button id="m-test" class="btn-grey" onclick="setMode('test')">🎲 TEST (random mix)</button>
+  </div>
+
+  <div class="form">
+    <label>Subject ID:</label><input type="text" id="subject" value="S001">
+    <label id="trials-lbl">Trials (this class):</label><input type="number" id="trials" value="20" min="1">
+    <label>Cue / prompt (s):</label><input type="number" id="cue" value="2" step="0.1" min="0.2">
+    <label>Action duration (s):</label><input type="number" id="active" value="2" step="0.1" min="0.2">
+    <label>Rest between trials (s):</label><input type="number" id="rest" value="3" step="0.1" min="0.2">
+    <label>Break every N trials:</label><input type="number" id="breakn" value="30" min="0">
+    <div class="toggles">
+      <div class="toggle" onclick="toggleAudio()"><span>Audio cues</span><span id="audio-pill" class="pill on">ON</span></div>
+      <div class="toggle" onclick="toggleFs()"><span>Fullscreen</span><span id="fs-pill" class="pill on">ON</span></div>
+    </div>
+  </div>
+
+  <div id="picker" class="classes"><div class="ttl">Class to record:</div></div>
+
+  <div id="preview"></div>
+  <button class="btn-green" style="font-size:17px;padding:14px 30px" onclick="startSession()">▶ Start Recording</button>
+</div>
+
+<!-- ============ STIMULUS ============ -->
+<div id="stim" class="screen">
+  <div id="topbar">
+    <span id="topinfo"></span>
+    <span id="topctrl">
+      <button id="pausebtn" class="btn-amber" onclick="togglePause()">⏸ PAUSE</button>
+      <button class="btn-red" onclick="confirmStop()">■ STOP</button>
+    </span>
+  </div>
+  <div id="prog"><div></div></div>
+  <div id="center">
+    <div id="rest-view" class="view"><div id="cross">+</div></div>
+    <div id="cue-view" class="view">
+      <div class="cue-emoji"></div><div class="cue-title"></div>
+      <div class="cue-ar"></div><div class="cue-ins"></div>
+      <div class="ringwrap">
+        <svg width="160" height="160"><circle cx="80" cy="80" r="70" stroke="#333" stroke-width="9" fill="none"/>
+        <circle id="ringfg" cx="80" cy="80" r="70" stroke="#00d4ff" stroke-width="9" fill="none"
+                stroke-dasharray="439.8" stroke-dashoffset="0" stroke-linecap="round"/></svg>
+        <div class="ringnum">3</div>
+      </div>
+    </div>
+    <div id="active-view" class="view">
+      <div class="act-emoji"></div><div class="act-word"></div><div class="act-go">GO!</div>
+    </div>
+    <div id="paused-view" class="view"><div id="paused">⏸ PAUSED</div><div style="color:#888;font-size:18px">Press SPACE to resume</div></div>
+    <div id="breakview">
+      <h2>Break Time!</h2><div id="breaktxt" style="font-size:26px"></div>
+      <button class="btn-green" style="font-size:17px;padding:14px 30px" onclick="continueBreak()">▶ Continue</button>
+    </div>
+  </div>
+  <div id="log"><div class="t">Recent markers</div><div id="logbody"></div></div>
+  <div id="hint">SPACE = pause · R = reject trial · N = skip · ESC = stop · F = fullscreen</div>
+</div>
+
+<!-- ============ COMPLETE ============ -->
+<div id="done" class="screen">
+  <h1 id="done-title"></h1>
+  <div class="meta" id="done-meta"></div>
+  <div class="saved" id="done-saved"></div>
+  <table id="done-table"></table>
+  <div id="dl-hint" style="color:var(--muted);font-size:13px">Files download to your device's Downloads folder.</div>
+  <div class="donebtns">
+    <button id="dl-csv" class="btn-green" style="font-size:18px;padding:15px 30px" onclick="downloadCsv()">⬇ Download CSV</button>
+    <button id="dl-sum" class="btn-blue" onclick="downloadSummary()">⬇ Summary TXT</button>
+    <button class="btn-grey" onclick="goMenu()">⟵ Back to Main Menu</button>
+  </div>
+</div>
+
+<script>
+// ===================== Class definitions (fixed marker ids 1..9) =====================
+const CLASSES = [
+  {key:'single_blink',     id:1, title:'Single Blink',     ar:'رمشة واحدة',      emoji:'👁',  ins:'Blink ONCE, naturally.',              act:'BLINK ×1'},
+  {key:'double_blink',     id:2, title:'Double Blink',     ar:'رمشتان متتاليتان', emoji:'👁👁', ins:'Blink TWICE quickly (~200 ms apart).', act:'BLINK ×2'},
+  {key:'triple_blink',     id:3, title:'Triple Blink',     ar:'ثلاث رمشات',      emoji:'👁✨', ins:'Blink THREE times rapidly.',          act:'BLINK ×3'},
+  {key:'jaw_clench_both',  id:4, title:'Jaw Clench BOTH',  ar:'اضغط الفكين',     emoji:'🦷',  ins:'Clench teeth on BOTH sides. Hold.',   act:'CLENCH BOTH'},
+  {key:'jaw_clench_right', id:5, title:'Jaw Clench RIGHT', ar:'اضغط الفك الأيمن', emoji:'🦷➡', ins:'Clench the RIGHT side only. Hold.',    act:'CLENCH RIGHT'},
+  {key:'jaw_clench_left',  id:6, title:'Jaw Clench LEFT',  ar:'اضغط الفك الأيسر', emoji:'🦷⬅', ins:'Clench the LEFT side only. Hold.',     act:'CLENCH LEFT'},
+  {key:'bruxism_both',     id:7, title:'Bruxism BOTH',     ar:'صرير الأسنان',    emoji:'😬',  ins:'Grind teeth, BOTH sides. Hold.',      act:'GRIND BOTH'},
+  {key:'bruxism_right',    id:8, title:'Bruxism RIGHT',    ar:'صرير يمين',       emoji:'😬➡', ins:'Grind on the RIGHT side. Hold.',      act:'GRIND RIGHT'},
+  {key:'bruxism_left',     id:9, title:'Bruxism LEFT',     ar:'صرير يسار',       emoji:'😬⬅', ins:'Grind on the LEFT side. Hold.',       act:'GRIND LEFT'},
+];
+const INFO = {}; CLASSES.forEach(c=>INFO[c.key]=c);
+const KEYS = CLASSES.map(c=>c.key);
+
+// ===================== Config / state =====================
+let cfg = {mode:'train', trainClass:'single_blink', audio:true, fs:true};
+let trialList=[], activeKeys=[], results={}, markers=[];
+let phase='rest', phaseStart=0, phaseEnd=0, trialIndex=0, lastBreakAt=-1;
+let paused=false, stopReq=false, skipReq=false, lastRejected=false;
+let startTime=0, runState='idle', lastFiles=null;
+const RING_C = 2*Math.PI*70;
+
+// ===================== Audio (WebAudio beeps) =====================
+let actx=null;
+function beep(freq,dur,type='sine',vol=0.18){
+  if(!cfg.audio) return;
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type=type; o.frequency.value=freq; g.gain.value=vol;
+    o.connect(g); g.connect(actx.destination); o.start();
+    g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime+dur);
+    o.stop(actx.currentTime+dur);
+  }catch(e){}
+}
+const SND={start:()=>beep(523,.25),end:()=>beep(392,.4),cue:()=>beep(880,.08),
+  go:()=>beep(1175,.12,'square'),stop:()=>beep(660,.15),brk:()=>beep(440,.35),
+  reject:()=>beep(175,.2),stopall:()=>beep(220,.6)};
+
+// ===================== Setup screen =====================
+function buildPicker(){
+  const p=document.getElementById('picker');
+  p.innerHTML='<div class="ttl">Class to record:</div>';
+  CLASSES.forEach(c=>{
+    const b=document.createElement('div');
+    b.className='cbtn'+(c.key===cfg.trainClass?' sel':'');
+    b.textContent=`${c.emoji} ${c.id}. ${c.title}`;
+    b.onclick=()=>{cfg.trainClass=c.key; buildPicker(); updatePreview();};
+    p.appendChild(b);
+  });
+}
+function setMode(m){
+  cfg.mode=m;
+  document.getElementById('m-train').className = m==='train'?'btn-green':'btn-grey';
+  document.getElementById('m-test').className  = m==='test' ?'btn-green':'btn-grey';
+  document.getElementById('trials-lbl').textContent = m==='train'?'Trials (this class):':'Trials PER class:';
+  document.getElementById('picker').style.display = m==='train'?'grid':'none';
+  updatePreview();
+}
+function toggleAudio(){cfg.audio=!cfg.audio;
+  const p=document.getElementById('audio-pill'); p.className='pill '+(cfg.audio?'on':'off'); p.textContent=cfg.audio?'ON':'OFF';}
+function toggleFs(){cfg.fs=!cfg.fs;
+  const p=document.getElementById('fs-pill'); p.className='pill '+(cfg.fs?'on':'off'); p.textContent=cfg.fs?'ON':'OFF';}
+function num(id){return parseFloat(document.getElementById(id).value);}
+function readForm(){
+  return {
+    subject:(document.getElementById('subject').value.trim()||'S001'),
+    mode:cfg.mode, trainClass:cfg.trainClass,
+    trials:Math.max(1, parseInt(document.getElementById('trials').value||'1',10)),
+    cue:Math.max(.2,num('cue')), active:Math.max(.2,num('active')),
+    rest:Math.max(.2,num('rest')), breakn:Math.max(0,parseInt(document.getElementById('breakn').value||'0',10)),
+    audio:cfg.audio, fs:cfg.fs,
+  };
+}
+function updatePreview(){
+  const c=readForm();
+  let total, what;
+  if(c.mode==='train'){ total=c.trials; what='class: '+INFO[c.trainClass].title; }
+  else { total=c.trials*KEYS.length; what=KEYS.length+' classes × '+c.trials; }
+  const per=c.cue+c.active+c.rest, mins=(total*per/60).toFixed(1);
+  document.getElementById('preview').textContent=`${what}    |    total trials: ${total}    |    ~${mins} min`;
+}
+['subject','trials','cue','active','rest','breakn'].forEach(id=>
+  document.getElementById(id).addEventListener('input',updatePreview));
+
+// ===================== Run number (localStorage) =====================
+function runKey(c){ return c.mode==='train' ? `run_${c.subject}_${c.trainClass}_train` : `run_${c.subject}_MIX_test`; }
+function nextRun(c){ return (parseInt(localStorage.getItem(runKey(c))||'0',10))+1; }
+
+// ===================== Start =====================
+function fixRepeats(arr){
+  if(arr.length<2) return arr;
+  for(let i=1;i<arr.length;i++){
+    if(arr[i]===arr[i-1]){
+      for(let j=i+1;j<arr.length;j++){
+        if(arr[j]!==arr[i-1] && (j+1>=arr.length || arr[j+1]!==arr[i])){
+          [arr[i],arr[j]]=[arr[j],arr[i]]; break;
+        }
+      }
+    }
+  }
+  return arr;
+}
+function startSession(){
+  const c=readForm();
+  c.run=nextRun(c);
+  cfg=Object.assign(cfg,c);
+  if(c.audio){ try{actx=actx||new (window.AudioContext||window.webkitAudioContext)(); actx.resume();}catch(e){} }
+
+  if(c.mode==='train'){ trialList=Array(c.trials).fill(c.trainClass); activeKeys=[c.trainClass]; }
+  else {
+    let t=[]; KEYS.forEach(k=>{for(let i=0;i<c.trials;i++)t.push(k);});
+    for(let i=t.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[t[i],t[j]]=[t[j],t[i]];}
+    trialList=fixRepeats(t); activeKeys=KEYS.slice();
+  }
+  results={}; activeKeys.forEach(k=>results[k]={trials:0,accepted:0,rejected:0});
+  markers=[]; trialIndex=0; lastBreakAt=-1; paused=false; stopReq=false; skipReq=false; lastRejected=false;
+
+  if(c.fs){ try{document.documentElement.requestFullscreen();}catch(e){} }
+  show('stim'); document.getElementById('logbody').textContent='';
+  document.getElementById('prog').firstElementChild.style.width='0%';
+  SND.start();
+  runState='running';
+  startTime=performance.now()/1000;
+  phase='rest'; phaseStart=startTime; phaseEnd=startTime+1.5;
+  requestAnimationFrame(loop);
+}
+
+// ===================== Main loop =====================
+function loop(){
+  if(runState!=='running') return;
+  requestAnimationFrame(loop);
+  if(stopReq){ endSession(true); return; }
+  if(paused){ showView('paused-view'); return; }
+  if(skipReq){ skipReq=false; const n=performance.now()/1000; phase='rest'; phaseStart=n; phaseEnd=n+cfg.rest; }
+  const now=performance.now()/1000;
+  if(now>=phaseEnd){ advance(now); if(runState!=='running') return; }
+  render(now);
+}
+function advance(now){
+  if(phase==='rest'){
+    if(trialIndex>=trialList.length){ endSession(false); return; }
+    if(cfg.breakn>0 && trialIndex>0 && trialIndex%cfg.breakn===0 && trialIndex!==lastBreakAt){
+      lastBreakAt=trialIndex; SND.brk(); showBreak(); return;
+    }
+    phase='cue'; phaseStart=now; phaseEnd=now+cfg.cue; SND.cue();
+  } else if(phase==='cue'){
+    const key=trialList[trialIndex]; lastRejected=false;
+    phase='active'; phaseStart=now; phaseEnd=now+cfg.active; SND.go();
+    writeMarker(key, trialIndex+1, true, cfg.active);
+  } else if(phase==='active'){
+    SND.stop();
+    const key=trialList[trialIndex];
+    if(lastRejected){ if(markers.length) markers[markers.length-1].accepted=false; results[key].rejected++; }
+    else results[key].accepted++;
+    results[key].trials++; trialIndex++;
+    phase='rest'; phaseStart=now; phaseEnd=now+cfg.rest;
+  }
+}
+
+// ===================== Markers =====================
+function writeMarker(key,trialNum,accepted,dur){
+  const t=performance.now()/1000-startTime, def=INFO[key];
+  markers.push({time_sec:+t.toFixed(3),marker_id:def.id,signal_name:key,
+                trial_num:trialNum,accepted:accepted,duration_sec:+dur.toFixed(3)});
+  logLine(`[${t.toFixed(2).padStart(7)}s] id=${String(def.id).padStart(2)} ${key.padEnd(18)} trial=${trialNum} ${accepted?'OK':'REJ'}`);
+}
+function logLine(s){
+  const b=document.getElementById('logbody');
+  let lines=(b.textContent+'\n'+s).split('\n').filter(x=>x).slice(-4);
+  b.textContent=lines.join('\n');
+}
+
+// ===================== Rendering =====================
+function showView(id){
+  document.querySelectorAll('#center .view').forEach(v=>v.classList.remove('show'));
+  document.getElementById(id).classList.add('show');
+}
+function render(now){
+  const key=trialIndex<trialList.length?trialList[trialIndex]:null;
+  const info=key?INFO[key]:null;
+  const el=Math.floor(now-startTime), m=Math.floor(el/60), s=el%60;
+  document.getElementById('topinfo').textContent=
+    `${cfg.subject}  |  ${cfg.mode.toUpperCase()}  |  Trial: ${Math.min(trialIndex+1,trialList.length)}/${trialList.length}`+
+    `  |  ${info?info.title.toUpperCase():'—'}  |  ${phase.toUpperCase()}  |  ${m}:${String(s).padStart(2,'0')}`;
+  document.getElementById('prog').firstElementChild.style.width=(100*trialIndex/trialList.length)+'%';
+
+  if(phase==='rest'||!info){
+    showView('rest-view');
+    const sc=1+0.10*Math.sin((now-phaseStart)*3.0);
+    document.getElementById('cross').style.fontSize=Math.round(200*sc)+'px';
+  } else if(phase==='cue'){
+    showView('cue-view');
+    const v=document.getElementById('cue-view');
+    v.querySelector('.cue-emoji').textContent=info.emoji;
+    v.querySelector('.cue-title').textContent=info.title.toUpperCase();
+    v.querySelector('.cue-ar').textContent=info.ar;
+    v.querySelector('.cue-ins').textContent=info.ins;
+    const remaining=Math.max(0,phaseEnd-now), frac=remaining/Math.max(.001,cfg.cue);
+    const ring=document.getElementById('ringfg');
+    ring.style.strokeDashoffset=(RING_C*(1-frac)).toFixed(1);
+    const color=remaining<=1?'#ff8844':'#00d4ff';
+    ring.setAttribute('stroke',color);
+    const numEl=v.querySelector('.ringnum');
+    numEl.textContent=Math.max(1,Math.ceil(remaining)); numEl.style.color=color;
+  } else if(phase==='active'){
+    showView('active-view');
+    const v=document.getElementById('active-view');
+    v.querySelector('.act-emoji').textContent=info.emoji;
+    v.querySelector('.act-word').textContent=info.act;
+  }
+}
+
+// ===================== Controls =====================
+function togglePause(){
+  paused=!paused;
+  const b=document.getElementById('pausebtn');
+  if(paused){ pauseStarted=performance.now()/1000; b.textContent='▶ RESUME'; b.className='btn-green'; }
+  else { phaseEnd+=performance.now()/1000-pauseStarted; b.textContent='⏸ PAUSE'; b.className='btn-amber'; }
+}
+let pauseStarted=0;
+function confirmStop(){ if(confirm('Stop the recording?\n\nMarkers so far can be saved.')){ SND.stopall(); stopReq=true; } }
+function markReject(){ if(phase==='active'){ lastRejected=true; SND.reject(); logLine('  ⚠ rejected trial '+(trialIndex+1)); } }
+function skipTrial(){ skipReq=true; }
+function showBreak(){ runState='break'; document.getElementById('breakview').classList.add('show'); }
+function continueBreak(){
+  document.getElementById('breakview').classList.remove('show');
+  const n=performance.now()/1000; phase='rest'; phaseStart=n; phaseEnd=n+1.0;
+  runState='running'; requestAnimationFrame(loop);
+}
+document.getElementById('breaktxt');
+document.addEventListener('keydown',e=>{
+  if(runState!=='running'&&runState!=='break') return;
+  if(e.code==='Space'){e.preventDefault();togglePause();}
+  else if(e.key==='r'||e.key==='R')markReject();
+  else if(e.key==='n'||e.key==='N')skipTrial();
+  else if(e.key==='Escape')confirmStop();
+  else if(e.key==='f'||e.key==='F'){ if(document.fullscreenElement)document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(()=>{}); }
+});
+
+// ===================== End / Save =====================
+function pad(n){return String(n).padStart(2,'0');}
+function stamp(d){return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;}
+function fileStem(d){
+  return cfg.mode==='train'
+    ? `${cfg.subject}_${cfg.trainClass}_train_R${pad(cfg.run)}_${stamp(d)}`
+    : `${cfg.subject}_MIX_test_R${pad(cfg.run)}_${stamp(d)}`;
+}
+function buildCsv(){
+  let s='time_sec,marker_id,signal_name,trial_num,accepted,duration_sec\n';
+  markers.forEach(m=>{ s+=`${m.time_sec},${m.marker_id},${m.signal_name},${m.trial_num},${m.accepted?'True':'False'},${m.duration_sec}\n`; });
+  return s;
+}
+function buildSummary(d){
+  const L=(k,v)=>`${k.padEnd(14)}: ${v}\n`;
+  let s='EEG Recording Summary\n'+'='.repeat(50)+'\n';
+  s+=L('Subject ID',cfg.subject); s+=L('Mode',cfg.mode.toUpperCase());
+  s+=L('Recording #','R'+pad(cfg.run));
+  s+=L('Date',`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
+  s+=L('Time',`${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`);
+  if(cfg.mode==='train') s+=L('Class',`${cfg.trainClass} (marker ${INFO[cfg.trainClass].id})`);
+  s+=L('Timing',`Cue=${cfg.cue}s  Action=${cfg.active}s  Rest=${cfg.rest}s`);
+  s+='='.repeat(50)+'\n\n';
+  s+='Class'.padEnd(22)+'Trials'.padStart(8)+'Accepted'.padStart(10)+'Rejected'.padStart(10)+'\n';
+  s+='-'.repeat(50)+'\n';
+  let tt=0,ta=0,tr=0;
+  activeKeys.forEach(k=>{const r=results[k];tt+=r.trials;ta+=r.accepted;tr+=r.rejected;
+    s+=k.padEnd(22)+String(r.trials).padStart(8)+String(r.accepted).padStart(10)+String(r.rejected).padStart(10)+'\n';});
+  s+='-'.repeat(50)+'\n'+'TOTAL'.padEnd(22)+String(tt).padStart(8)+String(ta).padStart(10)+String(tr).padStart(10)+'\n';
+  return s;
+}
+function download(name,text){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));
+  a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+}
+function saveOutputs(){
+  const d=new Date(), stem=fileStem(d);
+  lastFiles={csvName:stem+'_markers.csv', csvText:buildCsv(),
+             sumName:stem+'_summary.txt', sumText:buildSummary(d)};
+  localStorage.setItem(runKey(cfg), cfg.run);   // bump run only when saved
+  return lastFiles;
+}
+function downloadCsv(){ if(lastFiles) download(lastFiles.csvName,lastFiles.csvText); }
+function downloadSummary(){ if(lastFiles) download(lastFiles.sumName,lastFiles.sumText); }
+
+function endSession(cancelled){
+  runState='done';
+  if(!cancelled) SND.end();
+  let save=true;
+  if(cancelled) save=confirm('The recording was stopped early.\n\nSave the markers collected so far?\n(OK = save, Cancel = discard)');
+  lastFiles=null;
+  if(save){
+    saveOutputs();
+    downloadCsv();                       // auto-download the CSV immediately
+    setTimeout(downloadSummary, 700);    // stagger so the browser doesn't block the 2nd
+  }
+  showComplete(cancelled, save);
+}
+
+// ===================== Complete screen =====================
+function showComplete(cancelled, saved){
+  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  show('done');
+  const t=document.getElementById('done-title');
+  t.textContent=cancelled?'Recording Stopped':'Recording Complete';
+  t.style.color=cancelled?'var(--warn)':'var(--ok)';
+  const d=new Date();
+  document.getElementById('done-meta').textContent=
+    `Recording R${pad(cfg.run)}  ·  ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} `+
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}  ·  ${cfg.subject} (${cfg.mode.toUpperCase()})`;
+  const sv=document.getElementById('done-saved');
+  sv.textContent=saved?'Downloaded (CSV + summary)':'Not saved (discarded)';
+  sv.style.color=saved?'var(--ok)':'var(--warn)';
+  ['dl-csv','dl-sum','dl-hint'].forEach(id=>document.getElementById(id).style.display=saved?'':'none');
+
+  let html='<tr><th>Class</th><th>Trials</th><th>Accepted</th><th>Rejected</th></tr>';
+  activeKeys.forEach(k=>{const r=results[k];
+    html+=`<tr><td>${INFO[k].title}</td><td>${r.trials}</td><td>${r.accepted}</td><td>${r.rejected}</td></tr>`;});
+  document.getElementById('done-table').innerHTML=html;
+}
+function goMenu(){ runState='idle'; show('setup'); updatePreview(); }
+
+// ===================== Screen switching =====================
+function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active'); }
+
+// init
+buildPicker(); setMode('train'); updatePreview();
+</script>
+</body>
+</html>

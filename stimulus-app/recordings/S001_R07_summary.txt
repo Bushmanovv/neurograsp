@@ -1,0 +1,25 @@
+EEG Session Summary
+Generated: 2026-05-19T13:00:16
+Subject: S001   Run: 07
+Trials per signal: 15
+Active=2.0s  Rest=3.0s  Cue=2.0s
+
+Signal                          Trials  Accepted  Rejected
+------------------------------------------------------------
+prox_both                            0         0         0
+Look Right                           0         0         0
+Right Jaw Clench                     0         0         0
+Double Blink                         0         0         0
+Look Up                              0         0         0
+Look Down                            0         0         0
+Jaw Clench (both)                    0         0         0
+Eyebrow Raise                        0         0         0
+Eyes Closed Alpha                    0         0         0
+Right Wink                           0         0         0
+Left Jaw Clench                      0         0         0
+Look Left                            0         0         0
+Hard Blink                           0         0         0
+Left Wink                            0         0         0
+Single Blink                         0         0         0
+------------------------------------------------------------
+TOTAL                                0         0         0

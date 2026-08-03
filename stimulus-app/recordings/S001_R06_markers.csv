@@ -1,0 +1,13 @@
+time_sec,marker_id,signal_name,trial_num,accepted,duration_sec
+130.82,15,left_jaw,1,True,2.0
+138.215,25,prox_left,2,True,2.0
+145.462,16,right_jaw,3,True,2.0
+151.928,25,prox_left,4,True,2.0
+159.016,2,double_blink,5,True,2.0
+166.417,26,prox_right,6,True,2.0
+173.09,16,right_jaw,7,True,2.0
+180.489,26,prox_right,8,True,2.0
+188.097,25,prox_left,9,True,2.0
+195.129,27,prox_both,10,True,2.0
+202.211,2,double_blink,11,True,2.0
+208.84,15,left_jaw,12,True,2.0

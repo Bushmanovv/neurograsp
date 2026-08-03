@@ -1,0 +1,52 @@
+EEG Session Summary
+Generated: 2026-05-13T09:49:42
+Subject: S001   Run: 04
+Trials per signal: 15
+Active=2.0s  Rest=3.0s  Cue=2.0s
+
+Signal                          Trials  Accepted  Rejected
+------------------------------------------------------------
+Neck Tense                           0         0         0
+Swallow                              0         0         0
+Jaw Clench (both)                    0         0         0
+Look Down                            0         0         0
+Open Mouth Wide                      0         0         0
+Held Eyebrow (>1s)                   0         0         0
+Double Blink                         0         0         0
+Eyebrow Raise                        0         0         0
+Blink then Jaw                       0         0         0
+Head Tilt Left                       0         0         0
+Focus vs Relax                       0         0         0
+Left Wink                            0         0         0
+Look Up                              0         0         0
+Left Jaw Clench                      0         0         0
+Rapid Blink Burst                    0         0         0
+Long Jaw (>2s)                       0         0         0
+Light Jaw Clench                     0         0         0
+Hard Blink                           0         0         0
+Slow Blink (1s)                      0         0         0
+Short Jaw (<300ms)                   0         0         0
+Head Shake                           0         0         0
+Look Right                           0         0         0
+Right Jaw Clench                     0         0         0
+Wide Open Eyes                       0         0         0
+Mental Arithmetic                    0         0         0
+Squint                               0         0         0
+Head Nod                             0         0         0
+Tongue Press Left                    0         0         0
+Shoulder Shrug                       0         0         0
+Tongue Press Right                   0         0         0
+Eyes Closed Alpha                    0         0         0
+Single Eyebrow Raise                 0         0         0
+Hard Jaw Clench                      0         0         0
+Teeth Grinding                       0         0         0
+Look Left                            0         0         0
+Triple Blink                         0         0         0
+Single Blink                         0         0         0
+Head Tilt Right                      0         0         0
+Right Wink                           0         0         0
+Jaw then Blink                       0         0         0
+Smile                                0         0         0
+Frown                                0         0         0
+------------------------------------------------------------
+TOTAL                                0         0         0

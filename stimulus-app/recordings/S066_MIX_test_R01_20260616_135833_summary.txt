@@ -1,0 +1,23 @@
+EEG Recording Summary
+==================================================
+Subject ID    : S066
+Mode          : TEST
+Recording #   : R01
+Date          : 2026-06-16
+Time          : 13:58:33
+Timing        : Cue=2.0s  Action=2.0s  Rest=1.5s
+==================================================
+
+Class                   Trials  Accepted  Rejected
+--------------------------------------------------
+single_blink                 5         5         0
+double_blink                 5         5         0
+triple_blink                 5         5         0
+jaw_clench_both              5         5         0
+jaw_clench_right             5         5         0
+jaw_clench_left              5         5         0
+bruxism_both                 5         5         0
+bruxism_right                5         5         0
+bruxism_left                 5         5         0
+--------------------------------------------------
+TOTAL                       45        45         0

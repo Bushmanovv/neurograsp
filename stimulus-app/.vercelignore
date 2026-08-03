@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+recordings/
+*.py
+*.pyc
+eeg_stimulus.html
+.DS_Store

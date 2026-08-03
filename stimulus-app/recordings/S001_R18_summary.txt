@@ -1,0 +1,11 @@
+EEG Session Summary
+Generated: 2026-05-19T14:31:14
+Subject: S001   Run: 18
+Trials per signal: 20
+Active=2.0s  Rest=2.0s  Cue=1.0s
+
+Signal                          Trials  Accepted  Rejected
+------------------------------------------------------------
+Left Jaw Clench                     20        20         0
+------------------------------------------------------------
+TOTAL                               20        20         0
