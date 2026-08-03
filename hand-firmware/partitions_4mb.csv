@@ -1,0 +1,13 @@
+# 4 MB flash partition table for the InMoov hand controller.
+# Single app slot (no OTA) so LittleFS gets enough room for the web app.
+# The stock min_spiffs.csv only gives the filesystem 128 KB — far too small
+# for the dashboard (gzipped assets ~300 KB, plus room for a hand .glb later).
+# Layout: 1.75 MB app (app0) + ~2.1 MB LittleFS (spiffs) + coredump.
+# The filesystem label MUST be "spiffs" even though we format it LittleFS.
+#
+# Name,     Type, SubType,  Offset,    Size,      Flags
+nvs,        data, nvs,      0x9000,    0x5000,
+otadata,    data, ota,      0xe000,    0x2000,
+app0,       app,  ota_0,    0x10000,   0x1C0000,
+spiffs,     data, spiffs,   0x1D0000,  0x220000,
+coredump,   data, coredump, 0x3F0000,  0x10000,

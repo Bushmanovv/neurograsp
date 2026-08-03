@@ -1,0 +1,8 @@
+{
+  "single_blink": "open_hand",
+  "double_blink": "pinch",
+  "clinch": "close_fist",
+  "bruxism_left": "wrist_left",
+  "bruxism_right": "wrist_right",
+  "rest": "relax"
+}

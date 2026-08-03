@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#eef3fa">
+  <title>InMoov Hand</title>
+  <link rel="stylesheet" href="style.css?v=5">
+  <!-- apply saved theme before first paint to avoid a flash -->
+  <script>try{var s=JSON.parse(localStorage.getItem("inmoov.v1"));if(s&&s.settings&&s.settings.theme)document.documentElement.setAttribute("data-theme",s.settings.theme);}catch(e){}</script>
+</head>
+<body>
+  <div class="app">
+
+    <!-- ===================== HOME (3D hand + live dashboard) ===================== -->
+    <section class="screen home active" id="home">
+      <div class="statusbar">
+        <span class="wordmark">InMoov</span>
+        <span class="chips">
+          <span class="chip" id="eegChip" title="EEG link (Raspberry Pi)"><i class="dot"></i><span id="eegText">EEG</span></span>
+          <span class="chip batt" id="battChip"><svg class="battico" viewBox="0 0 24 24"><rect x="2" y="7" width="17" height="10" rx="2"/><rect class="lvl" x="4" y="9" width="13" height="6" rx="1"/><path d="M21 10v4"/></svg><span id="battText">—</span></span>
+        </span>
+      </div>
+
+      <div class="greeting">
+        <h1>Hi <span id="homeName">User</span></h1>
+        <p id="homeSub">Hand ready</p>
+      </div>
+
+      <div class="stage" id="stage"></div>
+
+      <!-- fail-safe: shown when the EEG link drops and the hand is holding -->
+      <div class="failsafe" id="failsafe" hidden>
+        <svg viewBox="0 0 24 24"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+        <span>No EEG signal — holding position</span>
+      </div>
+
+      <!-- live heads-up: what the hand is doing + a persistent relax control -->
+      <div class="hud">
+        <div class="hud-main">
+          <div class="hud-cue">
+            <span class="hud-k">Last cue</span>
+            <div class="hud-row">
+              <span class="hud-cuename" id="hudCue">—</span>
+              <svg class="hud-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              <span class="hud-action" id="hudAction">Ready</span>
+              <span class="hud-src" id="hudSrc" hidden></span>
+            </div>
+            <div class="hud-feed" id="hudFeed"></div>
+          </div>
+          <button class="hud-relax" id="homeRelax" title="Open / relax the hand">
+            <svg viewBox="0 0 24 24"><path d="M6 12h12M12 6v12"/></svg>
+            Relax
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== MAPPINGS ===================== -->
+    <section class="screen sheet" id="mappings">
+      <header class="sheet-head"><h2>Mappings</h2></header>
+      <div class="sheet-body">
+        <p class="hint">Each EEG cue triggers an action &mdash; a built-in motion or a saved pose.</p>
+        <div class="card">
+          <table class="map"><tbody id="mapRows"></tbody></table>
+        </div>
+        <button class="primary" id="saveMap">Save mappings</button>
+      </div>
+    </section>
+
+    <!-- ===================== POSES ===================== -->
+    <section class="screen sheet" id="poses">
+      <header class="sheet-head">
+        <h2>Poses</h2>
+        <p class="head-sub">Tap a pose to apply it, or shape a new one below.</p>
+      </header>
+      <div class="sheet-body">
+
+        <!-- saved poses gallery -->
+        <div class="pose-gallery" id="poseList"></div>
+
+        <!-- editor -->
+        <div class="card editor-card" id="editorCard">
+          <div class="card-head">
+            <span id="editorTitle">New pose</span>
+            <button class="ghost sm" id="newPose">Reset</button>
+          </div>
+
+          <div class="presets" id="presets"></div>
+
+          <div class="preview-stage">
+            <div class="hand-box" id="handPose"></div>
+          </div>
+
+          <div class="sliders" id="sliders"></div>
+
+          <input class="name-input" id="poseName" type="text" placeholder="Name this pose (e.g. ok_sign)">
+          <div class="editor-actions">
+            <button class="ghost" id="applyPose">Preview on hand</button>
+            <button class="primary" id="savePose">Save pose</button>
+          </div>
+        </div>
+
+        <button class="relax" id="relaxBtn">Relax / Open hand</button>
+      </div>
+    </section>
+
+    <!-- ===================== SETTINGS ===================== -->
+    <section class="screen sheet" id="settings">
+      <header class="sheet-head">
+        <h2>Settings</h2>
+        <p class="head-sub">Your profile and app preferences.</p>
+      </header>
+      <div class="sheet-body">
+
+        <div class="card">
+          <div class="card-head"><span>Profile</span></div>
+          <label class="field"><span>First name</span>
+            <input id="setFirst" type="text" autocomplete="given-name" placeholder="e.g. Karim"></label>
+          <label class="field"><span>Last name</span>
+            <input id="setLast" type="text" autocomplete="family-name" placeholder="e.g. Dwikat"></label>
+          <label class="field"><span>Device name</span>
+            <input id="setDevice" type="text" placeholder="e.g. InMoov-01"></label>
+          <div class="field row">
+            <span>Hand</span>
+            <div class="segmented" id="setHand">
+              <button data-hand="left">Left</button>
+              <button data-hand="right">Right</button>
+            </div>
+          </div>
+          <button class="primary" id="saveProfile">Save profile</button>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span>Appearance</span></div>
+          <div class="row-toggle">
+            <div class="rt-text"><span>Dark mode</span><small>Easier on the eyes in low light</small></div>
+            <button class="switch" id="darkToggle" role="switch" aria-checked="false"><span class="knob"></span></button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><span>Data</span></div>
+          <p class="hint">Profile, poses and mappings are saved on this device.</p>
+          <button class="ghost danger" id="resetData">Reset app data</button>
+        </div>
+
+        <p class="about">InMoov Hand &middot; Preview build</p>
+      </div>
+    </section>
+
+    <!-- ===================== BOTTOM NAV ===================== -->
+    <nav class="nav">
+      <button class="navbtn active" data-tab="home">
+        <svg viewBox="0 0 24 24"><path d="M5 19v-8l7-5 7 5v8h-5v-5h-4v5z"/></svg><span>Home</span></button>
+      <button class="navbtn" data-tab="mappings">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span>Mappings</span></button>
+      <button class="navbtn" data-tab="poses">
+        <svg viewBox="0 0 24 24"><path d="M7 4v16M7 8h10M12 4v4M17 4v16M17 14H7"/></svg><span>Poses</span></button>
+      <button class="navbtn" data-tab="settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Settings</span></button>
+    </nav>
+
+    <div class="mockbanner" id="mockbanner" hidden>Preview &middot; mock data</div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="vendor/three.min.js"></script>
+  <script src="vendor/GLTFLoader.js"></script>
+  <script src="hand3d.js?v=9"></script>
+  <script src="app.js?v=6"></script>
+</body>
+</html>
