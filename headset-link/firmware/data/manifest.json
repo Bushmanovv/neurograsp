@@ -1,0 +1,192 @@
+[
+  {
+    "class_id": 0,
+    "class_name": "double_blink",
+    "command_char": "S",
+    "action": "start/confirm",
+    "file": "seg0.bin",
+    "bytes": 38020,
+    "source": "DATA/Session1/Blink/Double blink/BLINK02.EDF",
+    "t0_s": 42.0,
+    "seconds": 5,
+    "sfreq": 200,
+    "n_ch": 19,
+    "n_samples": 1000,
+    "scale_uv_per_lsb": 0.15259021520614624,
+    "offset_uv": 0.07629510760307312,
+    "clipped_samples": 0,
+    "verified_fires": [
+      {
+        "t": 0.4,
+        "char": "S",
+        "conf": 1.0
+      },
+      {
+        "t": 1.0,
+        "char": "S",
+        "conf": 1.0
+      },
+      {
+        "t": 1.6,
+        "char": "S",
+        "conf": 0.797
+      }
+    ]
+  },
+  {
+    "class_id": 1,
+    "class_name": "single_blink",
+    "command_char": "O",
+    "action": "open hand",
+    "file": "seg1.bin",
+    "bytes": 38020,
+    "source": "DATA/Session1/Blink/Single Blink/BLINK01.EDF",
+    "t0_s": 40.0,
+    "seconds": 5,
+    "sfreq": 200,
+    "n_ch": 19,
+    "n_samples": 1000,
+    "scale_uv_per_lsb": 0.15259021520614624,
+    "offset_uv": 0.07629510760307312,
+    "clipped_samples": 0,
+    "verified_fires": [
+      {
+        "t": 0.6,
+        "char": "O",
+        "conf": 1.0
+      },
+      {
+        "t": 1.2,
+        "char": "O",
+        "conf": 1.0
+      },
+      {
+        "t": 1.8,
+        "char": "O",
+        "conf": 0.791
+      },
+      {
+        "t": 2.4,
+        "char": "O",
+        "conf": 1.0
+      },
+      {
+        "t": 3.0,
+        "char": "O",
+        "conf": 1.0
+      }
+    ]
+  },
+  {
+    "class_id": 2,
+    "class_name": "clinch",
+    "command_char": "C",
+    "action": "close hand",
+    "file": "seg2.bin",
+    "bytes": 38020,
+    "source": "DATA/Session1/Clinch/Clinch Bileteral/GLENCH03.EDF",
+    "t0_s": 68.0,
+    "seconds": 5,
+    "sfreq": 200,
+    "n_ch": 19,
+    "n_samples": 1000,
+    "scale_uv_per_lsb": 0.15259021520614624,
+    "offset_uv": 0.07629510760307312,
+    "clipped_samples": 0,
+    "verified_fires": [
+      {
+        "t": 0.4,
+        "char": "C",
+        "conf": 0.991
+      },
+      {
+        "t": 1.0,
+        "char": "C",
+        "conf": 0.994
+      },
+      {
+        "t": 1.6,
+        "char": "C",
+        "conf": 0.994
+      },
+      {
+        "t": 2.2,
+        "char": "C",
+        "conf": 0.969
+      }
+    ]
+  },
+  {
+    "class_id": 3,
+    "class_name": "bruxism_left",
+    "command_char": "L",
+    "action": "rotate left",
+    "file": "seg3.bin",
+    "bytes": 38020,
+    "source": "DATA/Session1/Bruxissem/02- Bruxesim left/BRUXES03.EDF",
+    "t0_s": 77.0,
+    "seconds": 5,
+    "sfreq": 200,
+    "n_ch": 19,
+    "n_samples": 1000,
+    "scale_uv_per_lsb": 0.15259021520614624,
+    "offset_uv": 0.07629510760307312,
+    "clipped_samples": 0,
+    "verified_fires": [
+      {
+        "t": 0.8,
+        "char": "L",
+        "conf": 0.821
+      },
+      {
+        "t": 1.4,
+        "char": "L",
+        "conf": 0.862
+      },
+      {
+        "t": 2.0,
+        "char": "L",
+        "conf": 0.827
+      }
+    ]
+  },
+  {
+    "class_id": 4,
+    "class_name": "bruxism_right",
+    "command_char": "R",
+    "action": "rotate right",
+    "file": "seg4.bin",
+    "bytes": 38020,
+    "source": "DATA/Session1/Bruxissem/03- Bruxisem RT/BRUXES02.EDF",
+    "t0_s": 40.0,
+    "seconds": 5,
+    "sfreq": 200,
+    "n_ch": 19,
+    "n_samples": 1000,
+    "scale_uv_per_lsb": 0.15259021520614624,
+    "offset_uv": 0.07629510760307312,
+    "clipped_samples": 0,
+    "verified_fires": [
+      {
+        "t": 0.6,
+        "char": "R",
+        "conf": 0.985
+      },
+      {
+        "t": 1.2,
+        "char": "R",
+        "conf": 0.989
+      },
+      {
+        "t": 1.8,
+        "char": "R",
+        "conf": 0.975
+      },
+      {
+        "t": 2.4,
+        "char": "R",
+        "conf": 0.931
+      }
+    ]
+  }
+]

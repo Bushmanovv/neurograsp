@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EEG headset</title>
+<style>
+  :root{--plane:#f9f9f7;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;
+        --border:rgba(11,11,11,.10);--accent:#2a78d6;--good:#0ca30c;--bad:#d03b3b}
+  @media (prefers-color-scheme:dark){
+    :root{--plane:#0d0d0d;--surface:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--muted:#898781;
+          --border:rgba(255,255,255,.10);--accent:#3987e5}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:22px;background:var(--plane);color:var(--ink);
+       font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  .wrap{max-width:620px;margin:0 auto}
+  h1{font-size:19px;margin:0 0 2px}
+  .sub{color:var(--ink2);font-size:13px;margin:0 0 20px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+        padding:16px;margin-bottom:14px}
+  .link{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
+  .dot.on{background:var(--good)} .dot.off{background:var(--bad)}
+  .meta{color:var(--muted);font-size:12px;margin-top:6px}
+  .btns{display:grid;gap:10px}
+  button{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;
+         background:var(--surface);color:var(--ink);border:1px solid var(--border);
+         border-radius:8px;padding:13px 14px;font:inherit}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.5;cursor:default}
+  .chip{font-family:ui-monospace,Menlo,monospace;font-weight:600;border:1px solid var(--border);
+        border-radius:5px;padding:2px 7px;flex:none}
+  .name{font-weight:600;text-transform:capitalize}
+  .act{color:var(--ink2);font-size:13px}
+  .size{margin-left:auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+  #status{margin-top:12px;font-size:13px;color:var(--ink2);min-height:1.4em}
+  #status.err{color:var(--bad)} #status.ok{color:var(--good)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>EEG headset</h1>
+  <p class="sub">Each button sends a 5&nbsp;s <code>.edf</code> snippet over Bluetooth to the Raspberry&nbsp;Pi, which classifies it.</p>
+
+  <div class="card">
+    <div class="link"><span class="dot" id="dot"></span><span id="bt">checking link…</span></div>
+    <div class="meta" id="meta"></div>
+  </div>
+
+  <div class="card">
+    <div class="btns" id="btns"></div>
+    <div id="status"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let busy = false;
+
+function setStatus(msg, cls) { $('status').textContent = msg; $('status').className = cls || ''; }
+
+async function refresh() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    $('dot').className = 'dot ' + (s.bt ? 'on' : 'off');
+    $('bt').textContent = s.bt ? 'Pi connected over Bluetooth' : 'waiting for the Pi to connect';
+    $('meta').textContent = `${s.name} · SPP channel 1 · dashboard at ${s.ip}`;
+    document.querySelectorAll('button').forEach(b => b.disabled = busy || !s.bt);
+  } catch (e) {
+    $('dot').className = 'dot off';
+    $('bt').textContent = 'board unreachable';
+  }
+}
+
+async function send(id, name) {
+  if (busy) return;
+  busy = true; refresh();
+  setStatus(`sending ${name}…`);
+  try {
+    const r = await fetch('/api/send?id=' + id);
+    const j = await r.json();
+    setStatus(j.status, j.ok ? 'ok' : 'err');
+  } catch (e) {
+    setStatus('send failed: ' + e, 'err');
+  }
+  busy = false; refresh();
+}
+
+fetch('/snippets.json').then(r => r.json()).then(list => {
+  $('btns').innerHTML = list.map(s => `
+    <button data-id="${s.class_id}">
+      <span class="chip">${s.command_char}</span>
+      <span>
+        <span class="name">${s.class_name.replace(/_/g, ' ')}</span><br>
+        <span class="act">${s.action}</span>
+      </span>
+      <span class="size">${(s.bytes / 1024).toFixed(0)} KiB</span>
+    </button>`).join('');
+  document.querySelectorAll('button').forEach(b => {
+    const s = list.find(x => x.class_id === Number(b.dataset.id));
+    b.addEventListener('click', () => send(s.class_id, s.class_name));
+  });
+  refresh();
+  setInterval(refresh, 2000);
+});
+</script>
+</body>
+</html>

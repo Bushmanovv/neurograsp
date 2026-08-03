@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EEG headset — laptop</title>
+<style>
+  :root {
+    --plane:#f9f9f7; --surface:#fcfcfb;
+    --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781;
+    --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --accent:#2a78d6; --good:#0ca30c; --warn:#b87503; --critical:#d03b3b;
+    --trace:#898781;
+  }
+  @media (prefers-color-scheme: dark) {
+    /* Dark is chosen, not flipped: the trace lifts off the plane instead of
+       inking onto it, and the grid drops further back than a mirror would put it. */
+    :root {
+      --plane:#0d0d0d; --surface:#1a1a19;
+      --ink:#ffffff; --ink-2:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+      --accent:#3987e5; --good:#3fb950; --warn:#d29922; --critical:#e5534b;
+      --trace:#6f6e69;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:24px; background:var(--plane); color:var(--ink);
+    font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width:1180px; margin:0 auto; }
+  h1 { font-size:19px; margin:0 0 2px; letter-spacing:-0.01em; }
+  .sub { color:var(--ink-2); font-size:13px; margin:0 0 20px; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  .card {
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:10px; padding:16px; margin-bottom:16px;
+  }
+  .card h2 {
+    font-size:12px; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--muted); margin:0 0 12px; font-weight:600;
+  }
+
+  /* Buttons: one per artifact class */
+  .buttons { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  button.seg {
+    background:var(--surface); color:var(--ink); text-align:left; cursor:pointer;
+    border:1px solid var(--border); border-radius:8px; padding:11px 12px;
+    font:inherit; transition:border-color .12s, background .12s;
+  }
+  button.seg:hover:not(:disabled) { border-color:var(--accent); }
+  button.seg:disabled { opacity:.45; cursor:default; }
+  button.seg[aria-pressed="true"] {
+    border-color:var(--accent); background:color-mix(in srgb, var(--accent) 7%, var(--surface));
+  }
+  .seg .name { font-weight:600; display:block; margin-bottom:4px; }
+  .seg .cmd { color:var(--ink-2); font-size:12px; }
+  .chip {
+    display:inline-block; min-width:17px; text-align:center; margin-right:6px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-weight:600;
+    border:1px solid var(--border); border-radius:4px; padding:0 4px; color:var(--ink);
+  }
+  .hint { color:var(--muted); font-size:12px; margin-top:12px; }
+
+  /* Stat tiles */
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+  .stat .label { color:var(--muted); font-size:12px; margin-bottom:3px; }
+  .stat .value { font-size:24px; font-weight:600; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; }
+  .stat .unit { font-size:13px; color:var(--ink-2); font-weight:400; margin-left:2px; }
+
+  .status { display:flex; align-items:center; gap:7px; font-size:15px; font-weight:600; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex:none; }
+  .dot.live { background:var(--accent); animation:pulse 1.1s ease-in-out infinite; }
+  .dot.good { background:var(--good); }
+  .dot.bad  { background:var(--critical); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  @media (prefers-reduced-motion: reduce) { .dot.live { animation:none; } }
+
+  /* Chart */
+  .chart-head { display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+  .legend { display:flex; gap:16px; align-items:center; font-size:12px; color:var(--ink-2); }
+  .legend .key { display:flex; align-items:center; gap:6px; }
+  .swatch { width:14px; height:2px; border-radius:1px; flex:none; }
+  .controls { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--ink-2); }
+  select {
+    font:inherit; font-size:12px; color:var(--ink); background:var(--surface);
+    border:1px solid var(--border); border-radius:6px; padding:3px 6px;
+  }
+  .canvas-box { position:relative; margin-top:12px; }
+  canvas { display:block; width:100%; height:600px; }
+  #tip {
+    position:absolute; pointer-events:none; opacity:0; transform:translate(-50%,-100%);
+    background:var(--surface); border:1px solid var(--border); border-radius:6px;
+    padding:6px 8px; font-size:12px; white-space:nowrap; color:var(--ink);
+    box-shadow:0 2px 10px rgba(0,0,0,.10); transition:opacity .08s;
+  }
+  #tip .t { color:var(--muted); }
+  #tip b { font-variant-numeric:tabular-nums; }
+  .note { color:var(--muted); font-size:12px; margin-top:10px; }
+  .empty { color:var(--muted); font-size:13px; padding:6px 0; }
+
+  /* Verdict */
+  .verdict-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+  .badge {
+    display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600;
+    border:1px solid var(--border); border-radius:5px; padding:2px 7px;
+  }
+  .badge.good { color:var(--good); border-color:color-mix(in srgb, var(--good) 40%, var(--border)); }
+  .badge.bad  { color:var(--critical); border-color:color-mix(in srgb, var(--critical) 40%, var(--border)); }
+  .badge.warn { color:var(--warn); border-color:color-mix(in srgb, var(--warn) 40%, var(--border)); }
+  .kv { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+  .fires { list-style:none; margin:0 0 10px; padding:0; }
+  .fires li {
+    display:grid; grid-template-columns:10px 54px 26px 1fr auto;
+    align-items:center; gap:9px; padding:7px 0;
+    border-bottom:1px solid var(--border); font-variant-numeric:tabular-nums;
+  }
+  .fires li:last-child { border-bottom:0; }
+  .fires .time { color:var(--ink-2); font-size:12px; }
+  .fires .conf { color:var(--muted); font-size:12px; }
+  .fires .name { font-weight:600; }
+  pre.out {
+    margin:0; padding:10px 12px; background:var(--plane); border:1px solid var(--border);
+    border-radius:6px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12px; line-height:1.45; color:var(--ink);
+    max-height:280px; overflow:auto; white-space:pre-wrap; word-break:break-word;
+  }
+  .cols { display:grid; grid-template-columns:1fr 380px; gap:16px; align-items:start; }
+  @media (max-width: 980px) {
+    .cols, .buttons, .stats { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>EEG headset</h1>
+  <p class="sub">
+    This laptop is the headset — the ESP32 is not in the loop. Each button sends a
+    <span id="cliplen2">5</span>&nbsp;s <code>.edf</code> snippet to the Raspberry&nbsp;Pi at
+    <code id="target">…</code>, which runs the model and sends its verdict back. Nothing is
+    classified here.
+  </p>
+
+  <div class="card">
+    <h2>Artifacts</h2>
+    <div class="buttons" id="buttons"></div>
+    <p class="hint">Press <code>1</code>–<code>5</code> to send. One snippet is in flight at a time, exactly as the board behaved.</p>
+  </div>
+
+  <div class="card">
+    <div class="stats">
+      <div class="stat">
+        <div class="label">Link to the Pi</div>
+        <div class="status"><span class="dot" id="linkdot"></span><span id="linktext">checking…</span></div>
+      </div>
+      <div class="stat">
+        <div class="label">Status</div>
+        <div class="status"><span class="dot" id="dot"></span><span id="status">Idle</span></div>
+      </div>
+      <div class="stat">
+        <div class="label">Sent</div>
+        <div class="value"><span id="sent">0</span><span class="unit">KiB</span></div>
+      </div>
+      <div class="stat">
+        <div class="label">Transfer</div>
+        <div class="value"><span id="ms">—</span><span class="unit" id="msunit"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="card">
+      <div class="chart-head">
+        <div>
+          <h2 style="margin-bottom:6px">Snippet
+            <span id="srcline" style="text-transform:none;letter-spacing:0;font-weight:400"></span>
+          </h2>
+          <div class="legend">
+            <span class="key"><span class="swatch" style="background:var(--accent);height:2px"></span> Gate channels (Fp1, Fp2, T3, T4)</span>
+            <span class="key"><span class="swatch" style="background:var(--trace)"></span> Other channels</span>
+          </div>
+        </div>
+        <div class="controls">
+          <label for="gain">Scale</label>
+          <select id="gain">
+            <option value="0" selected>Auto</option>
+            <option value="100">±100 µV</option>
+            <option value="250">±250 µV</option>
+            <option value="500">±500 µV</option>
+            <option value="1000">±1000 µV</option>
+            <option value="2000">±2000 µV</option>
+          </select>
+        </div>
+      </div>
+      <div class="canvas-box">
+        <canvas id="plot"></canvas>
+        <div id="tip"></div>
+      </div>
+      <p class="note">
+        Decoded from the very bytes that went on the wire. Display only: per-channel DC removed,
+        then decimated 200&nbsp;Hz&nbsp;→&nbsp;40&nbsp;Hz through an anti-alias low-pass — without it the
+        50&nbsp;Hz mains (≈92% of the raw power here) would fold onto a fake 10&nbsp;Hz rhythm. So this
+        view is the sub-20&nbsp;Hz band. The Pi gets the <code>.edf</code> intact and does its own
+        notch, band-pass, CAR and z-score.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Verdict from the Pi</h2>
+      <div id="verdict" style="display:none">
+        <div class="verdict-head">
+          <span class="badge" id="rc">—</span>
+          <span class="kv" id="took"></span>
+          <span class="kv">expected <span class="chip" id="expect">—</span></span>
+        </div>
+        <ul class="fires" id="fires"></ul>
+        <pre class="out" id="out"></pre>
+        <p class="note" id="cmdline"></p>
+      </div>
+      <div class="empty" id="verdictempty">No snippet sent yet. Press an artifact button.</div>
+      <p class="note">
+        The Pi writes the bytes to <code>snippet&lt;N&gt;.edf</code> and runs the model. Each confirmed
+        command above was also written to the hand over UART; the text below is what the Pi printed,
+        shown verbatim — this page does not interpret it. The model can only decide once the whole
+        clip has landed, because <code>preprocess_stream</code> z-scores each channel across the
+        entire segment. <em>Transfer</em> above is network time only; the model's time is next to
+        the exit code.
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const cv = $('plot'), ctx = cv.getContext('2d'), tip = $('tip');
+
+let CH = [], GATE = new Set(), clips = [];
+let series = [], filled = 0, dt = 0.025, seconds = 5, autoscale = 250;
+let hover = null, busy = false;
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const M = { l: 56, r: 14, t: 8, b: 26 };
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = cv.clientWidth * dpr; cv.height = cv.clientHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+
+function gainValue() {
+  const sel = Number($('gain').value);
+  return sel > 0 ? sel : Math.max(20, autoscale);
+}
+
+function draw() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  if (!CH.length) return;
+
+  const plotW = w - M.l - M.r, plotH = h - M.t - M.b;
+  const lane = plotH / CH.length, gain = gainValue();
+  const xOf = t => M.l + (t / seconds) * plotW;
+
+  // Recessive grid + time axis. Tick spacing follows the clip length: a 5 s clip
+  // with 5 s ticks would draw exactly two gridlines.
+  const step = seconds <= 6 ? 1 : seconds <= 15 ? 2 : 5;
+  ctx.strokeStyle = css('--grid'); ctx.lineWidth = 1;
+  ctx.fillStyle = css('--muted'); ctx.font = '11px system-ui, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (let k = 0; k * step <= seconds; k++) {
+    const x = Math.round(xOf(k * step)) + 0.5;
+    ctx.beginPath(); ctx.moveTo(x, M.t); ctx.lineTo(x, M.t + plotH); ctx.stroke();
+    ctx.fillText(k * step + 's', x, M.t + plotH + 7);
+  }
+  ctx.strokeStyle = css('--axis');
+  ctx.beginPath(); ctx.moveTo(M.l, M.t + plotH + 0.5); ctx.lineTo(M.l + plotW, M.t + plotH + 0.5); ctx.stroke();
+
+  // Lanes: the channel name is the identity, not a colour. Nineteen hues would be
+  // nineteen things to memorise; the one accent is spent on the four the gate reads.
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let c = 0; c < CH.length; c++) {
+    const mid = M.t + lane * (c + 0.5);
+    const isGate = GATE.has(CH[c]);
+    ctx.fillStyle = isGate ? css('--accent') : css('--muted');
+    ctx.font = (isGate ? '600 ' : '') + '11px system-ui, sans-serif';
+    ctx.fillText(CH[c], M.l - 8, mid);
+
+    if (!filled) continue;
+    const half = lane * 0.42;
+    ctx.beginPath();
+    for (let i = 0; i < filled; i++) {
+      const x = xOf(i * dt);
+      let y = mid - (series[c][i] / gain) * half;
+      y = Math.max(mid - half, Math.min(mid + half, y));   // clamp inside the lane
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = isGate ? css('--accent') : css('--trace');
+    ctx.lineWidth = isGate ? 1.2 : 1;      // hairlines: 19 lanes, 2px would be mush
+    ctx.stroke();
+  }
+
+  if (hover !== null && filled) {
+    const i = Math.min(filled - 1, Math.max(0, Math.round(hover.t / dt)));
+    const x = Math.round(xOf(i * dt)) + 0.5;
+    ctx.strokeStyle = css('--accent'); ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(x, M.t); ctx.lineTo(x, M.t + plotH); ctx.stroke();
+    ctx.setLineDash([]);
+    const c = Math.max(0, Math.min(CH.length - 1, Math.floor((hover.y - M.t) / lane)));
+    const mid = M.t + lane * (c + 0.5), half = lane * 0.42;
+    let y = mid - (series[c][i] / gain) * half;
+    y = Math.max(mid - half, Math.min(mid + half, y));
+    ctx.fillStyle = css('--accent');
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, 6.284); ctx.fill();
+
+    tip.style.opacity = 1;
+    tip.style.left = x + 'px';
+    tip.style.top = (mid - half - 6) + 'px';
+    tip.innerHTML = `<span class="t">${(i * dt).toFixed(2)}s</span> &nbsp;${CH[c]} &nbsp;<b>${series[c][i].toFixed(1)}</b> µV`;
+  } else {
+    tip.style.opacity = 0;
+  }
+}
+
+cv.addEventListener('mousemove', e => {
+  const r = cv.getBoundingClientRect();
+  const plotW = cv.clientWidth - M.l - M.r;
+  const t = ((e.clientX - r.left) - M.l) / plotW * seconds;
+  hover = (t >= 0 && t <= seconds) ? { t, y: e.clientY - r.top } : null;
+  draw();
+});
+cv.addEventListener('mouseleave', () => { hover = null; draw(); });
+$('gain').addEventListener('change', draw);
+window.addEventListener('resize', resize);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+
+function setStatus(text, cls) {
+  $('status').textContent = text;
+  $('dot').className = 'dot' + (cls ? ' ' + cls : '');
+}
+
+function setLink(s) {
+  $('linkdot').className = 'dot ' + (s.up ? 'good' : 'bad');
+  $('linktext').textContent = s.up ? 'Connected' : (s.error || 'Unreachable');
+  $('linktext').title = s.target + (s.error ? ` — ${s.error}` : '');
+  $('target').textContent = s.target;
+  document.querySelectorAll('button.seg').forEach(b => b.disabled = busy);
+}
+
+// ---- boot ----
+fetch('/api/clips').then(r => r.json()).then(m => {
+  clips = m.clips;
+  CH = m.channels; GATE = new Set(m.gate_channels);
+  seconds = clips[0].seconds;
+  $('cliplen2').textContent = seconds;
+  setLink(m.link);
+  $('buttons').innerHTML = clips.map((s, i) => `
+    <button class="seg" data-id="${s.class_id}" aria-pressed="false"
+            title="${s.file} — ${(s.bytes/1024).toFixed(0)} KiB">
+      <span class="name">${s.class_name.replace(/_/g, ' ')}</span>
+      <span class="cmd"><span class="chip">${s.command_char}</span>${s.action}</span>
+    </button>`).join('');
+  document.querySelectorAll('button.seg').forEach(b =>
+    b.addEventListener('click', () => send(Number(b.dataset.id))));
+  resize();
+
+  const auto = new URLSearchParams(location.search).get('send');
+  if (auto !== null && clips.some(s => s.class_id === Number(auto))) send(Number(auto));
+});
+
+document.addEventListener('keydown', e => {
+  const i = Number(e.key) - 1;
+  if (Number.isInteger(i) && i >= 0 && i < clips.length && !e.metaKey && !e.ctrlKey)
+    send(clips[i].class_id);
+});
+
+async function send(id) {
+  if (busy) return;
+  busy = true;
+  document.querySelectorAll('button.seg').forEach(b => {
+    b.disabled = true;
+    b.setAttribute('aria-pressed', String(Number(b.dataset.id) === id));
+  });
+  const r = await fetch('/api/send/' + id, { method: 'POST' });
+  if (r.status === 409) { setStatus('Busy', 'bad'); finish(); }
+}
+
+function finish() {
+  busy = false;
+  document.querySelectorAll('button.seg').forEach(b => b.disabled = false);
+}
+
+const es = new EventSource('/api/events');
+
+es.addEventListener('link', e => setLink(JSON.parse(e.data)));
+
+// The snippet is on its way; draw the very bytes being sent.
+es.addEventListener('clip', e => {
+  const d = JSON.parse(e.data);
+  busy = true;
+  seconds = d.seconds; dt = d.dt; autoscale = d.autoscale;
+  CH = d.channels;
+  series = d.trace; filled = d.trace[0].length;
+  $('srcline').textContent =
+    `— ${d.source.split('/').pop()} @ t=${d.t0_s.toFixed(0)}s, ${(d.bytes/1024).toFixed(0)} KiB`;
+  $('expect').textContent = d.command_char;
+  $('sent').textContent = '0'; $('ms').textContent = '—'; $('msunit').textContent = '';
+  $('verdict').style.display = 'none';
+  $('verdictempty').style.display = 'block';
+  $('verdictempty').textContent = 'Sending…';
+  setStatus('Sending', 'live');
+  draw();
+});
+
+es.addEventListener('sent', e => {
+  const d = JSON.parse(e.data);
+  $('sent').textContent = (d.bytes / 1024).toFixed(0);
+  $('ms').textContent = d.ms.toFixed(0); $('msunit').textContent = 'ms';
+  $('verdictempty').textContent = 'Delivered. The Pi is running the model…';
+  setStatus('Pi classifying', 'live');
+});
+
+es.addEventListener('verdict', e => {
+  const d = JSON.parse(e.data);
+  const ok = d.returncode === 0, none = d.returncode === null;
+  $('verdictempty').style.display = 'none';
+  $('verdict').style.display = 'block';
+  $('rc').textContent = none ? 'stored, no --cmd' : ok ? 'exit 0' : `exit ${d.returncode}`;
+  $('rc').className = 'badge ' + (none ? 'warn' : ok ? 'good' : 'bad');
+  $('took').textContent = none ? `wrote ${d.file}` : `${d.seconds.toFixed(1)}s`;
+
+  // Only pi_service.py (the resident classifier) reports what the hand was told to
+  // do; the generic receiver has no idea what the command printed means.
+  const fires = d.fires || [];
+  $('fires').innerHTML = fires.map(f => `
+    <li>
+      <span class="dot good" title="confirmed"></span>
+      <span class="time">t=${f.t.toFixed(1)}s</span>
+      <span class="chip">${f.char}</span>
+      <span><span class="name">${f.name.replace(/_/g, ' ')}</span> — ${f.action}</span>
+      <span class="conf">${f.conf.toFixed(2)}</span>
+    </li>`).join('');
+
+  $('out').textContent = d.output && d.output.trim()
+    ? d.output
+    : (none ? `The Pi stored ${d.file} but has no --cmd to run.`
+            : 'The command printed nothing.');
+  $('cmdline').textContent = d.cmd ? `$ ${d.cmd}` : '';
+
+  const label = d.fires ? (fires.length ? `Hand commanded: ${fires.map(f => f.char).join(' ')}`
+                                        : 'Nothing confirmed')
+                        : (ok ? 'Classified' : 'Command failed');
+  setStatus(none ? 'Stored on the Pi' : ok ? label : 'Command failed',
+            none ? null : ok && (!d.fires || fires.length) ? 'good' : 'bad');
+  finish();
+});
+
+// It landed, but the receiver is not replying (started with --no-reply, or older).
+es.addEventListener('noreply', e => {
+  $('verdictempty').style.display = 'block';
+  $('verdict').style.display = 'none';
+  $('verdictempty').textContent = JSON.parse(e.data).message +
+    ' — read it off the Pi’s own terminal, or restart pi_receive.py without --no-reply.';
+  setStatus('Delivered, no verdict', 'bad');
+  finish();
+});
+
+// Named 'failed', not 'error': EventSource dispatches a native 'error' on every
+// reconnect, which would otherwise clear the status mid-send.
+es.addEventListener('failed', e => {
+  $('verdictempty').style.display = 'block';
+  $('verdict').style.display = 'none';
+  $('verdictempty').textContent = JSON.parse(e.data).message;
+  setStatus('Send failed', 'bad');
+  finish();
+});
+</script>
+</body>
+</html>

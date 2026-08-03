@@ -1,0 +1,57 @@
+[
+  {
+    "class_id": 0,
+    "class_name": "double_blink",
+    "command_char": "S",
+    "action": "start/confirm",
+    "file": "s0.edf",
+    "bytes": 43406,
+    "seconds": 5,
+    "source": "DATA/Session1/Blink/Double blink/BLINK02.EDF",
+    "t0_s": 42.0
+  },
+  {
+    "class_id": 1,
+    "class_name": "single_blink",
+    "command_char": "O",
+    "action": "open hand",
+    "file": "s1.edf",
+    "bytes": 43406,
+    "seconds": 5,
+    "source": "DATA/Session1/Blink/Single Blink/BLINK01.EDF",
+    "t0_s": 40.0
+  },
+  {
+    "class_id": 2,
+    "class_name": "clinch",
+    "command_char": "C",
+    "action": "close hand",
+    "file": "s2.edf",
+    "bytes": 43406,
+    "seconds": 5,
+    "source": "DATA/Session1/Clinch/Clinch Bileteral/GLENCH03.EDF",
+    "t0_s": 68.0
+  },
+  {
+    "class_id": 3,
+    "class_name": "bruxism_left",
+    "command_char": "L",
+    "action": "rotate left",
+    "file": "s3.edf",
+    "bytes": 43406,
+    "seconds": 5,
+    "source": "DATA/Session1/Bruxissem/02- Bruxesim left/BRUXES03.EDF",
+    "t0_s": 77.0
+  },
+  {
+    "class_id": 4,
+    "class_name": "bruxism_right",
+    "command_char": "R",
+    "action": "rotate right",
+    "file": "s4.edf",
+    "bytes": 43406,
+    "seconds": 5,
+    "source": "DATA/Session1/Bruxissem/03- Bruxisem RT/BRUXES02.EDF",
+    "t0_s": 40.0
+  }
+]

@@ -1,0 +1,62 @@
+# The classifier, resident on the RPi5, started at boot with no screen attached.
+#
+#   sudo cp deploy/eeg-headset.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now eeg-headset
+#   journalctl -u eeg-headset -f
+#
+# Edit User= and the two paths if your username is not `pi` or the project lives
+# somewhere else. Everything else is deliberate -- see the comments.
+
+[Unit]
+Description=EEG headset classifier (receives .edf snippets, drives the hand)
+Documentation=https://github.com/  # your repo
+# The service binds 0.0.0.0 and needs a routable address for the laptop to reach
+# it by name; starting before the network is up would bind and then be unreachable.
+After=network-online.target
+Wants=network-online.target
+# Never stop retrying: the default start-limit gives up after 5 restarts in 10 s,
+# which is precisely when you need it to keep coming back. ([Unit], not [Service]
+# -- systemd ignores it in [Service] and says so in the journal.)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+# Contract A goes out over the UART. Membership here is what makes /dev/serial0
+# writable without running the whole service as root.
+SupplementaryGroups=dialout
+
+# The classifier lives INSIDE the headset repo: ~/neurograsp/eeg-classifier.
+# config.py names its models by RELATIVE path ("models/dtw_hybrid_model.pkl"), so
+# this must be the project directory or the model will not be found.
+WorkingDirectory=/home/pi/neurograsp/eeg-classifier
+# Pi 5: /dev/serial0 is the 3-pin DEBUG connector, not the GPIO header. The hand
+# on GPIO 14/15 is /dev/ttyAMA0, and needs dtparam=uart0=on in config.txt.
+Environment=EEG_SERIAL_PORT=/dev/ttyAMA0
+# Unbuffered as a belt-and-braces with the service's own line-buffering, so
+# `journalctl -f` shows each window as it happens rather than in bursts.
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=/home/pi/neurograsp/eeg-classifier/.venv/bin/python \
+    /home/pi/neurograsp/headset-link/pi_service.py \
+    --project /home/pi/neurograsp/eeg-classifier \
+    --model dtw \
+    --listen 5005 \
+    --serial-port /dev/ttyAMA0 \
+    --require-serial \
+    --quiet
+
+# A crash mid-demo must not leave the hand unattended: come straight back, keep
+# retrying forever (the default StartLimitBurst would give up after 5 tries).
+Restart=always
+RestartSec=3
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# multi-user.target, NOT graphical.target: this must come up on a Pi with no
+# monitor, no keyboard and nobody logged in.
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+# The laptop side. dashboard.py, edf.py, host_send.py and the tests are
+# stdlib-only on purpose — the dashboard decodes EDF with the ~90-line reader in
+# edf.py rather than importing mne, so what it draws is provably the bytes it
+# sent.
+#
+# These are only needed by virtual_headset.py, which conditions an arbitrary
+# recording into the exact .edf the classifier accepts:
+#
+#   check  needs mne
+#   build  needs mne + pandas + edfio  (edfio is the EDF *export* backend)
+#
+# Both are imported lazily, so `check` runs on a machine with no export backend.
+
+mne
+pandas
+edfio
+
+# Running the tests
+pytest
