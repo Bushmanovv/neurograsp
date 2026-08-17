@@ -1,0 +1,60 @@
+name: Deploy story-site to GitHub Pages
+
+# Builds story-site/ and publishes it to Pages. Only fires when that
+# directory changes, so pushes to the classifier or the STLs don't
+# trigger a site rebuild.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'story-site/**'
+      - '.github/workflows/deploy-story-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it half-published.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The repo carries ~121 MB of STLs in hardware/. None of it is
+          # needed to build a static page, so only check out what is.
+          sparse-checkout: story-site
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: story-site/package-lock.json
+
+      - name: Install
+        working-directory: story-site
+        run: npm ci
+
+      - name: Build
+        working-directory: story-site
+        run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: story-site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
