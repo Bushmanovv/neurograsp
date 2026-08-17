@@ -1,0 +1,58 @@
+/* ============================================================
+   TOKENS — the one place to change colour, type and spacing.
+   Everything else in the project reads from these variables.
+   Visual modules read the colours via getComputedStyle, so
+   changing a hex here also restyles every SVG diagram.
+   ============================================================ */
+
+:root {
+  /* --- Palette -------------------------------------------------
+     Three load-bearing colours plus neutrals.
+     The two families match the report's own figure convention:
+     blue  = EOG / ocular / blink   (frontal, Fp1-Fp2)
+     amber = EMG / muscular / jaw   (temporal, T3-T4)
+     oxide = reserved. Errors, rejected experiments, retractions.
+             Never used decoratively — if it is red, it failed.
+  */
+  --paper:        #EDF0EE;   /* cool clinical chart-paper grey-green */
+  --paper-raised: #F6F8F6;   /* figure grounds, cards */
+  --ink:          #14191A;   /* body text, near-black with a cool cast */
+  --ink-soft:     #56605E;   /* captions, secondary prose */
+  --ink-faint:    #8D9794;   /* axis labels, disabled states */
+  --rule:         #C6CFCB;   /* hairlines, grids, axes */
+
+  --eog:          #2C5FA8;   /* blink family */
+  --eog-soft:     #A9BFDD;
+  --emg:          #B4671A;   /* jaw family */
+  --emg-soft:     #E2C39B;
+  --oxide:        #9C2B2C;   /* failure, error, do-not-cite */
+  --oxide-soft:   #DBB2B2;
+
+  /* --- Type ---------------------------------------------------- */
+  --font-display: "Newsreader Variable", "Newsreader", Georgia, serif;
+  --font-body:    "Newsreader Variable", "Newsreader", Georgia, serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --size-hero:    clamp(2.75rem, 7.5vw, 5.25rem);
+  --size-h2:      clamp(1.75rem, 3.6vw, 2.6rem);
+  --size-h3:      clamp(1.15rem, 2vw, 1.35rem);
+  --size-body:    clamp(1.075rem, 1.35vw, 1.2rem);
+  --size-small:   0.9rem;
+  --size-micro:   0.72rem;
+
+  --leading-body: 1.72;   /* generous — this is a long read */
+  --leading-tight: 1.16;
+  --measure:      66ch;   /* ~65–75 characters */
+
+  /* --- Space / layout ------------------------------------------ */
+  --col:          min(var(--measure), calc(100vw - 3rem));
+  --figure-max:   min(1080px, calc(100vw - 2.5rem));
+  --section-gap:  clamp(5rem, 12vh, 9rem);
+  --stack:        1.35em;
+
+  /* --- Motion --------------------------------------------------- */
+  --ease: cubic-bezier(0.33, 0.9, 0.36, 1);
+}
+
+/* Dark rendering is deliberately not offered: this is built to be
+   legible on a projector in a defence room and on paper. */

@@ -1,0 +1,371 @@
+@import "./tokens.css";
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--size-body);
+  font-variation-settings: "opsz" 16;
+  line-height: var(--leading-body);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+::selection { background: var(--eog-soft); color: var(--ink); }
+
+:focus-visible {
+  outline: 2px solid var(--eog);
+  outline-offset: 3px;
+}
+
+/* ------------------------------------------------------------------
+   Layout: one column, figures break out wider (see .figure below).
+   ------------------------------------------------------------------ */
+.col {
+  width: var(--col);
+  margin-inline: auto;
+}
+
+/* ------------------------------------------------------------------
+   Hero
+   ------------------------------------------------------------------ */
+.hero {
+  min-height: 92svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8vh 0 6vh;
+  position: relative;
+}
+
+.hero__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 0 0 2.5rem;
+}
+
+.hero__title {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 48, "wght" 400;
+  font-size: var(--size-hero);
+  line-height: 0.98;
+  letter-spacing: -0.025em;
+  margin: 0 0 1.6rem;
+  max-width: 16ch;
+  text-wrap: balance;
+}
+
+.hero__title em {
+  font-style: italic;
+  font-variation-settings: "opsz" 48, "wght" 400;
+}
+
+.hero__dek {
+  font-size: clamp(1.15rem, 1.9vw, 1.4rem);
+  line-height: 1.5;
+  color: var(--ink-soft);
+  max-width: 46ch;
+  margin: 0 0 3.5rem;
+  text-wrap: pretty;
+}
+
+/* The provenance strip: the page's signature device, introduced up front.
+   Every figure below carries the same tag format. */
+.provenance-strip {
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 0.9rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+.provenance-strip b { font-weight: 600; color: var(--ink); }
+
+.scroll-cue {
+  margin-top: 3rem;
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.scroll-cue::after {
+  content: "";
+  width: 3.5rem; height: 1px;
+  background: var(--rule);
+  transform-origin: left;
+  animation: cue 2.4s var(--ease) infinite;
+}
+@keyframes cue { 0%,100% { transform: scaleX(0.3); opacity: 0.4 } 50% { transform: scaleX(1); opacity: 1 } }
+
+/* ------------------------------------------------------------------
+   Sections and prose
+   ------------------------------------------------------------------ */
+.section { padding-block: var(--section-gap) 0; }
+
+.section__eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  margin: 0 0 1.1rem;
+}
+.section__eyebrow::before {
+  content: "";
+  flex: 0 0 1.75rem;
+  height: 1px;
+  background: var(--rule);
+  transform: translateY(-0.25em);
+}
+
+.section__title {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 32, "wght" 500;
+  font-size: var(--size-h2);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.018em;
+  margin: 0 0 1.5rem;
+  max-width: 22ch;
+  text-wrap: balance;
+}
+
+.section p {
+  margin: 0 0 var(--stack);
+  text-wrap: pretty;
+}
+
+.section p strong {
+  font-weight: 600;
+  font-variation-settings: "opsz" 16, "wght" 600;
+}
+
+/* A pull-quote used exactly twice, for the two turns in the argument. */
+.turn {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 32, "wght" 400;
+  font-size: clamp(1.4rem, 2.6vw, 1.95rem);
+  line-height: 1.32;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  border-left: 2px solid var(--oxide);
+  padding-left: 1.5rem;
+  margin: 2.75rem 0;
+  max-width: 34ch;
+}
+.turn--found { border-left-color: var(--eog); }
+
+/* Inline data mentions get the instrument voice. */
+.num {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.num--eog { color: var(--eog); }
+.num--emg { color: var(--emg); }
+.num--bad { color: var(--oxide); }
+
+/* ------------------------------------------------------------------
+   Figure chrome — the signature system.
+   Every figure declares what it is and where its numbers came from.
+   ------------------------------------------------------------------ */
+.figure {
+  margin: 3.25rem auto;
+  width: var(--figure-max);
+}
+
+.figure__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1.5rem;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 0.55rem;
+  margin-bottom: 0.55rem;
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.figure__label { color: var(--ink); font-weight: 600; }
+
+/* The provenance tag. Green-ish neutral = measured; oxide = schematic. */
+.figure__prov {
+  color: var(--ink-soft);
+  text-align: right;
+  flex-shrink: 0;
+}
+.figure__prov--schematic { color: var(--oxide); }
+
+.figure__caption {
+  font-family: var(--font-mono);
+  font-size: var(--size-small);
+  line-height: 1.55;
+  color: var(--ink-soft);
+  text-transform: none;
+  letter-spacing: 0;
+  margin: 0 0 1.5rem;
+  max-width: 74ch;
+}
+
+.figure__stage {
+  background: var(--paper-raised);
+  border: 1px solid var(--rule);
+  padding: clamp(0.75rem, 2vw, 1.75rem);
+  position: relative;
+}
+
+.figure svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+.figure__note {
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  color: var(--ink-faint);
+  margin-top: 0.75rem;
+  letter-spacing: 0.04em;
+}
+
+/* Step readout shown beneath multi-act figures */
+.figure__steps {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.9rem;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  color: var(--ink-faint);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.figure__steps span {
+  height: 2px; width: 1.6rem;
+  background: var(--rule);
+  transition: background 0.3s var(--ease);
+}
+.figure__steps span.on { background: var(--ink); }
+
+/* SVG text defaults. Sized for a 1000-unit viewBox rendered around
+   1080px wide, and to stay legible when projected. */
+.figure svg text {
+  font-family: var(--font-mono);
+  fill: var(--ink-soft);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.figure svg .t-label { fill: var(--ink); font-weight: 600; }
+.figure svg .t-value { font-size: 13.5px; fill: var(--ink); font-weight: 600; }
+.figure svg .t-axis  { fill: var(--ink-faint); font-size: 11px; }
+.figure svg .t-big   { font-size: 23px; fill: var(--ink); font-weight: 600; letter-spacing: -0.02em; }
+
+.figure__steps i { font-style: normal; margin-right: 0.9rem; }
+
+/* ------------------------------------------------------------------
+   Limitations list
+   ------------------------------------------------------------------ */
+.open-list { list-style: none; padding: 0; margin: 2rem 0 0; counter-reset: open; }
+.open-list li {
+  counter-increment: open;
+  border-top: 1px solid var(--rule);
+  padding: 1.4rem 0 1.4rem 3rem;
+  position: relative;
+}
+.open-list li::before {
+  content: counter(open, decimal-leading-zero);
+  position: absolute; left: 0; top: 1.45rem;
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  color: var(--oxide);
+  letter-spacing: 0.1em;
+}
+.open-list h3 {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 20, "wght" 600;
+  font-size: var(--size-h3);
+  margin: 0 0 0.4rem;
+  line-height: 1.3;
+}
+.open-list p { font-size: 1.02rem; color: var(--ink-soft); margin: 0; }
+
+/* ------------------------------------------------------------------
+   Footer
+   ------------------------------------------------------------------ */
+.colophon {
+  margin-top: var(--section-gap);
+  padding: 3rem 0 5rem;
+  border-top: 1px solid var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--size-micro);
+  line-height: 1.9;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------
+   Reveal primitives (JS adds .is-in)
+   ------------------------------------------------------------------ */
+.reveal { opacity: 0; transform: translateY(14px); }
+.reveal.is-in { opacity: 1; transform: none; transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
+
+/* ------------------------------------------------------------------
+   Reduced motion: everything renders in its final state, no scrub.
+   ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .scroll-cue::after { animation: none; transform: scaleX(1); }
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+@media (max-width: 860px) {
+  :root { --leading-body: 1.66; --section-gap: 4rem; }
+  .figure { margin: 2.25rem auto; }
+  .figure__head { flex-direction: column; gap: 0.3rem; align-items: flex-start; }
+  .figure__prov { text-align: left; }
+  .turn { padding-left: 1.1rem; margin: 2rem 0; }
+
+  /* A 1000-unit viewBox squeezed into a 360px phone would render 12px
+     labels at roughly 4px. Rather than ship an unreadable diagram, the
+     stage becomes pannable and the drawing keeps a legible minimum. */
+  .figure__stage {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    padding: 0.75rem;
+  }
+  .figure svg { min-width: 760px; }
+
+  .figure__stage::-webkit-scrollbar { height: 4px; }
+  .figure__stage::-webkit-scrollbar-thumb { background: var(--rule); }
+
+  .figure__steps::after {
+    content: "swipe figure →";
+    margin-left: auto;
+    color: var(--ink-faint);
+    text-transform: none;
+    letter-spacing: 0.04em;
+  }
+}

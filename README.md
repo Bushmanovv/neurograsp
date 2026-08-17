@@ -60,7 +60,7 @@ editable from the phone while the hand is running.
 
 ## Repository layout
 
-Seven pieces, each independently runnable:
+Eight pieces, each independently runnable:
 
 | Directory | What it is |
 |---|---|
@@ -71,6 +71,7 @@ Seven pieces, each independently runnable:
 | [`hand-firmware/`](hand-firmware/) | ESP32 firmware (PlatformIO) + the offline web dashboard it serves from LittleFS. |
 | [`hardware/`](hardware/) | 24 print-ready STLs, the build checklist, and the parts/sourcing list. |
 | [`docs/`](docs/) | The 14-chapter report (LaTeX + compiled PDF), architecture diagrams, research notes. |
+| [`story-site/`](story-site/) | The report as a scrollytelling page. Eight SVG figures drawn as code from the report's own tables, each tagged with the table it came from. Vite + vanilla JS. |
 
 ## How a gesture becomes movement
 
